@@ -76,6 +76,12 @@ export async function gameRoutes(app: FastifyInstance, { service, cookieSecure }
     return { state: null };
   });
 
+  app.put<{ Body: { duration_minutes?: unknown } }>('/api/game/settings', async (request) => {
+    const playerId = requirePlayerId(request);
+    service.updateSettings(playerId, request.body?.duration_minutes);
+    return { state: stateFor(playerId) };
+  });
+
   app.post('/api/game/start', async (request) => {
     const playerId = requirePlayerId(request);
     service.startGame(playerId);

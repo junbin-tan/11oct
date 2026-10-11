@@ -1,28 +1,19 @@
-import { useId } from 'react';
+import { RadarMap } from './RadarMap';
 import type { PlayerSummary, RadarResponse } from '../types';
 
-export const RADAR_RANGE_M = 500;
-const SIZE = 300;
-const CENTER = SIZE / 2;
-const PLOT_RADIUS = 136;
 const AGING_MS = 15_000;
 const EXPIRED_MS = 30_000;
-
-export function radarPosition(distanceM: number, bearingDeg: number) {
-  const r = (Math.min(distanceM, RADAR_RANGE_M) / RADAR_RANGE_M) * PLOT_RADIUS;
-  const b = (bearingDeg * Math.PI) / 180;
-  return { x: CENTER + r * Math.sin(b), y: CENTER - r * Math.cos(b) };
-}
 
 interface RadarProps {
   radar: RadarResponse | null;
   players: PlayerSummary[];
   nowMs: number;
+  myId: string;
+  visible: boolean;
   reconnecting?: boolean;
 }
 
-export function Radar({ radar, players, nowMs, reconnecting = false }: RadarProps) {
-  const clipId = useId();
+export function Radar({ radar, players, myId, visible, nowMs, reconnecting = false }: RadarProps) {
   const originAge = radar?.origin_captured_at == null ? null : Math.max(0, nowMs - radar.origin_captured_at);
   const originExpired = originAge !== null && originAge > EXPIRED_MS;
   const byId = new Map(players.map((p) => [p.id, p]));
@@ -51,35 +42,7 @@ export function Radar({ radar, players, nowMs, reconnecting = false }: RadarProp
         </div>
       </div>
       <div className="radar-stage">
-        <svg className="radar" viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="North-up radar, 500 metre range">
-        <defs><clipPath id={clipId}><circle cx={CENTER} cy={CENTER} r={PLOT_RADIUS} /></clipPath></defs>
-        <circle cx={CENTER} cy={CENTER} r={PLOT_RADIUS + 4} className="radar-bg" />
-        {[0.25, 0.5, 0.75, 1].map((f) => (
-          <circle key={f} cx={CENTER} cy={CENTER} r={PLOT_RADIUS * f} className="radar-ring" />
-        ))}
-        <line x1={CENTER} y1={CENTER - PLOT_RADIUS} x2={CENTER} y2={CENTER + PLOT_RADIUS} className="radar-axis" />
-        <line x1={CENTER - PLOT_RADIUS} y1={CENTER} x2={CENTER + PLOT_RADIUS} y2={CENTER} className="radar-axis" />
-        <text x={CENTER} y={12} className="radar-north">N</text>
-        <text x={CENTER + 4} y={CENTER - PLOT_RADIUS / 2 + 12} className="radar-scale">250 m</text>
-        <text x={CENTER + 4} y={CENTER - PLOT_RADIUS + 12} className="radar-scale">500 m</text>
-        <circle cx={CENTER} cy={CENTER} r={6} className="radar-me" />
-        {points.filter(({ expired, uncertain }) => !expired && !uncertain).map(({ point, player, aging }) => {
-          const { x, y } = radarPosition(point.distance_m, point.bearing_deg);
-          return (
-            <g key={point.player_id} className={aging ? 'radar-aging' : undefined}>
-              <title>{player.name}: approximate position{aging ? ', aging reading' : ''}</title>
-              <circle cx={x} cy={y} r={(point.uncertainty_m! / RADAR_RANGE_M) * PLOT_RADIUS}
-                className="radar-uncertainty" clipPath={`url(#${clipId})`} />
-              {player.role === 'catcher' ? (
-                <rect x={x - 7} y={y - 7} width={14} height={14} rx={2} className="radar-dot catcher" transform={`rotate(45 ${x} ${y})`} />
-              ) : (
-                <circle cx={x} cy={y} r={8} className="radar-dot runner" />
-              )}
-              <text x={x} y={y - 12} className="radar-label">{player.name}</text>
-            </g>
-          );
-        })}
-        </svg>
+        <RadarMap players={players} myId={myId} nowMs={nowMs} visible={visible} />
       </div>
 
       <p className="radar-meta">

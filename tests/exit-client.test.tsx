@@ -7,6 +7,9 @@ import { useGame } from '../src/hooks/useGame';
 import type { GameState } from '../src/types';
 import { Results } from '../src/views/Results';
 
+// The embedded radar map has its own integration coverage.
+vi.mock('../src/components/RadarMap', () => ({ RadarMap: () => null }));
+
 const api = vi.hoisted(() => ({ getState: vi.fn(), leaveGame: vi.fn(), getRadar: vi.fn(), updateLocation: vi.fn() }));
 vi.mock('../src/api', () => ({ api, ApiError: class extends Error {} }));
 
@@ -14,7 +17,7 @@ function membership(status: GameState['game']['status'] = 'active'): GameState {
   return {
     server_now: Date.now(),
     me: { player_id: 'guest', name: 'Guest', role: 'runner', is_host: false, tag_code: 'ABC123', qr_payload: 'tag:ABCDEF:guest:token' },
-    game: { code: 'ABCDEF', status, host_player_id: 'host', created_at: 1000, started_at: 2000, ended_at: null, end_reason: null },
+    game: { code: 'ABCDEF', status, host_player_id: 'host', created_at: 1000, started_at: 2000, ended_at: null, duration_minutes: 30, ends_at: null, end_reason: null },
     players: [
       { id: 'host', name: 'Host', role: 'catcher', is_host: true, gps_ready: false, tag_count: 2, caught_at: null, left_at: null },
       { id: 'guest', name: 'Guest', role: 'runner', is_host: false, gps_ready: false, tag_count: 0, caught_at: null, left_at: null },

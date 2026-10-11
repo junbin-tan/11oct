@@ -14,6 +14,7 @@ interface LobbyProps {
   onEnableGps: () => void;
   onResetGps: () => void;
   onStart: () => void;
+  onDurationChange: (minutes: number) => void;
   onExit: () => Promise<string | null>;
 }
 
@@ -21,7 +22,7 @@ export function inviteUrl(code: string): string {
   return `${window.location.origin}/?room=${code}`;
 }
 
-export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart, onExit }: LobbyProps) {
+export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart, onDurationChange, onExit }: LobbyProps) {
   const [copied, setCopied] = useState(false);
   const { game, me, players } = state;
 
@@ -71,6 +72,21 @@ export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart
             </button>
           </div>
         </div>
+      </section>
+
+      <section className="round-settings" aria-labelledby="round-duration-label">
+        <div>
+          <p className="eyebrow" id="round-duration-label">Round duration</p>
+          <p className="round-goal">Catch everyone in {game.duration_minutes} minutes.</p>
+        </div>
+        <div className="duration-control">
+          {me.is_host && <button className="btn" aria-label="Decrease duration by 30 minutes"
+            disabled={busy || game.duration_minutes <= 30} onClick={() => onDurationChange(game.duration_minutes - 30)}>−</button>}
+          <output aria-live="polite" aria-label="Round duration">{game.duration_minutes}<small>minutes</small></output>
+          {me.is_host && <button className="btn" aria-label="Increase duration by 30 minutes"
+            disabled={busy || game.duration_minutes >= 360} onClick={() => onDurationChange(game.duration_minutes + 30)}>+</button>}
+        </div>
+        <p className="duration-hint">{me.is_host ? 'Choose 30 minutes to 6 hours, in 30-minute steps.' : 'The host chooses the time limit.'} Runners win if time runs out.</p>
       </section>
 
       <div className="section-heading">

@@ -5,12 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, viewFor } from '../src/App';
 import { PlayerAvatar, playerInitials } from '../src/components/PlayerAvatar';
 import { PlayerQr } from '../src/components/PlayerQr';
-import { Radar, radarPosition } from '../src/components/Radar';
+import { Radar } from '../src/components/Radar';
 import { useGeolocation } from '../src/hooks/useGeolocation';
 import { useGame } from '../src/hooks/useGame';
 import { useRadar } from '../src/hooks/useRadar';
 import type { GameState, RadarResponse } from '../src/types';
 import { GpsStatus } from '../src/views/GpsStatus';
+
+// Map rendering and polling are covered in radar-map-client.test.tsx.
+vi.mock('../src/components/RadarMap', () => ({ RadarMap: () => <div aria-label="Radar street map" /> }));
 
 const apiMock = vi.hoisted(() => ({
   getState: vi.fn(),
@@ -53,7 +56,7 @@ function stateWith(status: GameState['game']['status']): GameState {
   return {
     server_now: 0,
     me: { player_id: 'p1', name: 'A', role: 'runner', is_host: false, tag_code: 'AAAAAA', qr_payload: 'tag:X:p1:t' },
-    game: { code: 'ABCDEF', status, host_player_id: 'p0', created_at: 0, started_at: null, ended_at: null, end_reason: null },
+    game: { code: 'ABCDEF', status, host_player_id: 'p0', created_at: 0, started_at: null, ended_at: null, duration_minutes: 30, ends_at: null, end_reason: null },
     players: [],
     events: [],
   };
@@ -66,21 +69,6 @@ describe('viewFor', () => {
     expect(viewFor(stateWith('waiting'))).toBe('lobby');
     expect(viewFor(stateWith('active'))).toBe('game');
     expect(viewFor(stateWith('ended'))).toBe('results');
-  });
-});
-
-describe('radarPosition', () => {
-  it('places points north-up with east to the right', () => {
-    const centre = radarPosition(0, 0);
-    const north = radarPosition(500, 0);
-    const east = radarPosition(250, 90);
-    const south = radarPosition(500, 180);
-    expect(north.x).toBeCloseTo(centre.x);
-    expect(north.y).toBeLessThan(centre.y);
-    expect(east.x).toBeGreaterThan(centre.x);
-    expect(east.y).toBeCloseTo(centre.y);
-    expect(south.y).toBeGreaterThan(centre.y);
-    expect(radarPosition(2000, 0)).toEqual(north);
   });
 });
 
@@ -556,49 +544,38 @@ describe('radar freshness and uncertainty display', () => {
     points: [{ player_id: 'p2', distance_m: 150, bearing_deg: 90, accuracy_m: 5,
       captured_at: at, fix_age_s: 0, uncertainty_m: 20, position_uncertain: false }],
   });
-  it('uses a circle for Runners and a diamond for Catchers', () => {
-    const catcher = { ...player, id: 'p3', name: 'Casey', role: 'catcher' as const };
-    const radar = snapshot();
-    radar.points.push({
-      player_id: 'p3', distance_m: 220, bearing_deg: 180, accuracy_m: 5,
-      captured_at: at, fix_age_s: 0, uncertainty_m: 20, position_uncertain: false,
-    });
-
-    const view = render(<Radar radar={radar} players={[player, catcher]} nowMs={at} />);
-    const runnerMarker = view.container.querySelector('circle.radar-dot.runner');
-    const catcherMarker = view.container.querySelector('rect.radar-dot.catcher');
-    expect(runnerMarker).not.toBeNull();
-    expect(catcherMarker?.getAttribute('transform')).toContain('rotate(45');
+  it('keeps the panel heading, legend, and nearby list around the map', () => {
+    const view = render(<Radar myId="me" visible radar={snapshot()} players={[player]} nowMs={at} />);
+    expect(screen.getByLabelText('Radar street map')).toBeTruthy();
+    expect(screen.getByText('Live radar')).toBeTruthy();
+    expect(screen.getByLabelText('Radar legend').textContent).toBe('RunnerCatcher');
+    expect(screen.getByText('Nearby players')).toBeTruthy();
+    expect(view.container.querySelector('.nearby-player')?.textContent).toBe('BobRunner');
   });
   it('shows combined uncertainty and ages the reading during a network outage', () => {
     const radar = snapshot();
-    const view = render(<Radar radar={radar} players={[player]} nowMs={at} />);
+    const view = render(<Radar myId="me" visible radar={radar} players={[player]} nowMs={at} />);
     expect(screen.getByText(/≈ 150 m \(±20 m\)/)).toBeTruthy();
-    expect(view.container.querySelector('.radar-uncertainty')).not.toBeNull();
-    view.rerender(<Radar radar={radar} players={[player]} nowMs={at + 16_000} reconnecting />);
+    view.rerender(<Radar myId="me" visible radar={radar} players={[player]} nowMs={at + 16_000} reconnecting />);
     expect(screen.getByText(/16s old · aging/)).toBeTruthy();
     expect(screen.getByText('Connection lost. Retrying radar…')).toBeTruthy();
-    expect(view.container.querySelector('.radar-aging')).not.toBeNull();
-    view.rerender(<Radar radar={radar} players={[player]} nowMs={at + 30_001} reconnecting />);
-    expect(view.container.querySelector('.radar-dot')).toBeNull();
+    view.rerender(<Radar myId="me" visible radar={radar} players={[player]} nowMs={at + 30_001} reconnecting />);
     expect(screen.getByText(/Location expired/)).toBeTruthy();
     expect(screen.queryByText(/≈ 150 m/)).toBeNull();
   });
-  it('hides directions when only the origin has expired', () => {
+  it('keeps the expired-origin status when only the origin has expired', () => {
     const radar = snapshot(); radar.points[0]!.captured_at = at + 25_000;
-    const view = render(<Radar radar={radar} players={[player]} nowMs={at + 31_000} />);
-    expect(view.container.querySelector('.radar-dot')).toBeNull();
+    const view = render(<Radar myId="me" visible radar={radar} players={[player]} nowMs={at + 31_000} />);
     expect(screen.getByText(/Your location expired/)).toBeTruthy();
   });
   it.each(['overlap', 'unknown accuracy', 'unknown capture age', 'unknown origin age'])(
-    'does not plot %s as a precise position', (scenario) => {
+    'keeps %s marked uncertain in the nearby list', (scenario) => {
       const radar = snapshot();
       if (scenario === 'overlap') radar.points[0]!.position_uncertain = true;
       if (scenario === 'unknown accuracy') radar.points[0]!.uncertainty_m = null;
       if (scenario === 'unknown capture age') radar.points[0]!.captured_at = null;
       if (scenario === 'unknown origin age') radar.origin_captured_at = null;
-      const view = render(<Radar radar={radar} players={[player]} nowMs={at} />);
-      expect(view.container.querySelector('.radar-dot')).toBeNull();
+      const view = render(<Radar myId="me" visible radar={radar} players={[player]} nowMs={at} />);
       expect(screen.getByText(/Position uncertain/)).toBeTruthy();
       expect(screen.queryByText(/≈ 150 m/)).toBeNull();
     },

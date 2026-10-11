@@ -88,5 +88,14 @@ export async function buildApp({ db, config, now, rateLimit = true, logger = fal
     return reply.code(404).send({ error: 'NOT_FOUND', message: 'Not found.' });
   });
 
+  const expireRounds = () => {
+    try { service.expireGames(); }
+    catch (error) { app.log.error(error, 'game expiration failed'); }
+  };
+  service.expireGames();
+  const expirationTimer = setInterval(expireRounds, 1_000);
+  expirationTimer.unref();
+  app.addHook('onClose', async () => { clearInterval(expirationTimer); });
+
   return { app, service };
 }

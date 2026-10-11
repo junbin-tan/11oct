@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { ExitButton } from '../components/ExitButton';
 import { GameCharacter } from '../components/GameCharacter';
 import { GameMap } from '../components/GameMap';
@@ -32,6 +32,11 @@ interface GameProps {
 export function Game({ state, radar, radarReconnecting, visible = true, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd, onExit }: GameProps) {
   const [modal, setModal] = useState<'qr' | 'scan' | 'map' | null>(null);
   const { me, game, players, events } = state;
+  const remainingMs = Math.max(0, (game.ends_at ?? nowMs) - nowMs);
+  const deadlineReached = game.ends_at !== null && remainingMs === 0;
+  useEffect(() => {
+    if (deadlineReached) setModal(null);
+  }, [deadlineReached]);
   const isCatcher = me.role === 'catcher';
   const catchers = players.filter((p) => p.role === 'catcher').length;
   const runners = players.length - catchers;
@@ -40,6 +45,7 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
   const gpsNeedsAttention = gpsStatus !== 'active' && gpsStatus !== 'sharing' && gpsStatus !== 'requesting';
 
   const handleTag = async (input: { payload: string } | { code: string }) => {
+    if (deadlineReached) return 'Time’s up! The round has ended.';
     const error = await onTag(input);
     if (!error) setModal(null);
     return error;
@@ -64,7 +70,7 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
         <div className="metric-strip" aria-label="Game status">
           <span className="runner-metric"><strong>{runners}</strong><small>{runners === 1 ? 'Runner' : 'Runners'}</small></span>
           <span className="catcher-metric"><strong>{catchers}</strong><small>{catchers === 1 ? 'Catcher' : 'Catchers'}</small></span>
-          <span><strong>{formatDuration(nowMs - (game.started_at ?? nowMs))}</strong><small>Elapsed</small></span>
+          <span className={`time-left${remainingMs <= 60_000 ? ' running-low' : ''}`} role="timer" aria-label="Time left"><strong>{formatDuration(Math.ceil(remainingMs / 1000) * 1000)}</strong><small>Time left</small></span>
         </div>
         <div className="team-balance" aria-hidden="true">
           <span className="runner-segment" style={{ width: `${runnerShare}%` }} />
@@ -74,7 +80,8 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
 
       {gpsNeedsAttention && <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />}
 
-      <Radar radar={radar} players={players} nowMs={nowMs} reconnecting={radarReconnecting} />
+      <Radar radar={radar} players={players} myId={me.player_id} visible={visible && !deadlineReached}
+        nowMs={nowMs} reconnecting={radarReconnecting} />
 
       {!gpsNeedsAttention && <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />}
 
@@ -113,7 +120,7 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
         {me.is_host && (
           <button
             className="btn danger"
-            disabled={busy}
+            disabled={busy || deadlineReached}
             onClick={() => {
               if (window.confirm('End the game for everyone?')) onEnd();
             }}
@@ -124,23 +131,23 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
       </details>
 
       <div className={`action-dock role-dock ${me.role}`}>
-        <button className="btn dock-map-action" onClick={() => setModal('map')}>
+        <button className="btn dock-map-action" disabled={deadlineReached} onClick={() => setModal('map')}>
           <UiIcon name="map" />Map
         </button>
-        <button className="btn role-primary dock-action" onClick={() => setModal(isCatcher ? 'scan' : 'qr')}>
+        <button className="btn role-primary dock-action" disabled={deadlineReached} onClick={() => setModal(isCatcher ? 'scan' : 'qr')}>
           <UiIcon name={isCatcher ? 'scan' : 'qr'} />
           {isCatcher ? 'Scan to tag' : 'Show my QR'}
         </button>
       </div>
 
-      {modal === 'map' && (
+      {!deadlineReached && modal === 'map' && (
         <GameMap players={players} myId={me.player_id} nowMs={nowMs} visible={visible}
           gpsStatus={gpsStatus} onEnableGps={onEnableGps} onResetGps={onResetGps} onClose={() => setModal(null)} />
       )}
-      {modal === 'qr' && (
+      {!deadlineReached && modal === 'qr' && (
         <PlayerQr name={me.name} payload={me.qr_payload} tagCode={me.tag_code} onClose={() => setModal(null)} />
       )}
-      {modal === 'scan' && isCatcher && (
+      {!deadlineReached && modal === 'scan' && isCatcher && (
         <Suspense fallback={<div className="modal-fallback" role="status"><div className="modal-card">Starting camera…</div></div>}>
           <QrScanner onSubmit={handleTag} onClose={() => setModal(null)} />
         </Suspense>

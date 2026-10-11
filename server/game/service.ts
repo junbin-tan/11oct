@@ -21,7 +21,9 @@ interface GameRow {
   created_at: number;
   started_at: number | null;
   ended_at: number | null;
-  end_reason: 'host_left' | 'players_left' | null;
+  end_reason: 'host_left' | 'players_left' | 'time_up' | null;
+  duration_minutes: number;
+  ends_at: number | null;
 }
 
 interface PlayerRow {
@@ -60,7 +62,9 @@ export interface GameState {
     created_at: number;
     started_at: number | null;
     ended_at: number | null;
-    end_reason: 'host_left' | 'players_left' | null;
+    end_reason: 'host_left' | 'players_left' | 'time_up' | null;
+    duration_minutes: number;
+    ends_at: number | null;
   };
   players: Array<{
     id: string;
@@ -139,6 +143,7 @@ export class GameService {
   ) {}
 
   createGame(nameInput: unknown, currentPlayerId: string | null = null): { playerId: string } {
+    this.expireGames();
     const name = normalizeName(nameInput);
     return this.db.transaction(() => {
       this.assertCanSwitchRoom(currentPlayerId);
@@ -158,6 +163,7 @@ export class GameService {
   }
 
   joinGame(currentPlayerId: string | null, codeInput: unknown, nameInput: unknown): { playerId: string } {
+    this.expireGames();
     const code = normalizeCode(codeInput);
     if (!code) throw new GameError('INVALID_INPUT', 'Room codes are 6 characters.');
     const name = normalizeName(nameInput);
@@ -187,6 +193,7 @@ export class GameService {
   }
 
   getState(playerId: string): GameState | null {
+    this.expireGames();
     const me = this.findPlayer(playerId);
     if (!me) return null;
     const game = this.getGame(me.game_id);
@@ -235,6 +242,8 @@ export class GameService {
         started_at: game.started_at,
         ended_at: game.ended_at,
         end_reason: game.end_reason,
+        duration_minutes: game.duration_minutes,
+        ends_at: game.ends_at,
       },
       players: players.map((p) => ({
         id: p.id,
@@ -250,7 +259,20 @@ export class GameService {
     };
   }
 
+  updateSettings(playerId: string, duration: unknown): void {
+    this.expireGames();
+    this.db.transaction(() => {
+      const { game } = this.requireHost(playerId);
+      if (game.status !== 'waiting') throw new GameError('ROOM_STARTED', 'The duration cannot change after the game starts.');
+      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < 30 || duration > 360 || duration % 30 !== 0) {
+        throw new GameError('INVALID_INPUT', 'Choose 30–360 minutes in 30-minute steps.');
+      }
+      this.db.prepare('UPDATE games SET duration_minutes = ? WHERE id = ?').run(duration, game.id);
+    })();
+  }
+
   startGame(playerId: string): void {
+    this.expireGames();
     this.db.transaction(() => {
       const { game } = this.requireHost(playerId);
       if (game.status !== 'waiting') throw new GameError('ROOM_STARTED', 'The game has already started.');
@@ -267,13 +289,15 @@ export class GameService {
            WHERE game_id = ?`,
         )
         .run(game.host_player_id, game.id);
+      const now = this.now();
       this.db
-        .prepare(`UPDATE games SET status = 'active', started_at = ? WHERE id = ?`)
-        .run(this.now(), game.id);
+        .prepare(`UPDATE games SET status = 'active', started_at = ?, ends_at = ? WHERE id = ?`)
+        .run(now, now + game.duration_minutes * 60_000, game.id);
     })();
   }
 
   endGame(playerId: string): void {
+    this.expireGames();
     this.db.transaction(() => {
       const { game } = this.requireHost(playerId);
       if (game.status !== 'active') throw new GameError('GAME_NOT_ACTIVE', 'The game is not running.');
@@ -282,6 +306,7 @@ export class GameService {
   }
 
   leaveGame(playerId: string | null): void {
+    this.expireGames();
     if (!playerId) return;
     this.db.transaction(() => {
       const me = this.findPlayer(playerId);
@@ -310,6 +335,7 @@ export class GameService {
   }
 
   updateLocation(playerId: string, input: LocationInput): LocationAck {
+    this.expireGames();
     const { lat, lng, accuracy } = input;
     if (
       typeof lat !== 'number' ||
@@ -359,6 +385,7 @@ export class GameService {
   }
 
   getMap(playerId: string): MapResponse {
+    this.expireGames();
     return this.db.transaction(() => {
       const me = this.requirePlayer(playerId);
       const game = this.getGame(me.game_id);
@@ -370,6 +397,7 @@ export class GameService {
   }
 
   getRadar(playerId: string): RadarResponse {
+    this.expireGames();
     return this.db.transaction((): RadarResponse => {
       const me = this.requirePlayer(playerId);
       const game = this.getGame(me.game_id);
@@ -423,6 +451,8 @@ export class GameService {
   }
 
   tag(playerId: string, input: TagInput): TagResult {
+    const now = this.now();
+    this.expireGames(now);
     return this.db.transaction((): TagResult => {
       const me = this.requirePlayer(playerId);
       const game = this.getGame(me.game_id);
@@ -435,7 +465,6 @@ export class GameService {
         return { outcome: 'already_tagged', target_name: target.display_name };
       }
 
-      const now = this.now();
       const converted = this.db
         .prepare(`UPDATE players SET role = 'catcher', caught_at = ? WHERE id = ? AND role = 'runner'`)
         .run(now, target.id);
@@ -459,10 +488,11 @@ export class GameService {
   }
 
   cleanup(): { deletedGames: number } {
+    this.expireGames();
     const now = this.now();
     return this.db.transaction(() => {
       const deleted = this.db
-        .prepare(`DELETE FROM games WHERE created_at < ?`)
+        .prepare(`DELETE FROM games WHERE created_at < ? AND status != 'active'`)
         .run(now - GAME_RETENTION_MS);
       this.db
         .prepare(
@@ -473,6 +503,15 @@ export class GameService {
         )
         .run(now - STALE_LOCATION_MS);
       return { deletedGames: deleted.changes };
+    })();
+  }
+
+  expireGames(now = this.now()): number {
+    return this.db.transaction(() => {
+      const overdue = this.db.prepare("SELECT id, ends_at FROM games WHERE status = 'active' AND ends_at <= ?")
+        .all(now) as Array<{ id: string; ends_at: number }>;
+      for (const game of overdue) this.finishGame(game.id, 'time_up', game.ends_at);
+      return overdue.length;
     })();
   }
 
@@ -502,10 +541,11 @@ export class GameService {
     return target;
   }
 
-  private finishGame(gameId: string, reason: GameRow['end_reason'] = null): void {
-    this.db
-      .prepare(`UPDATE games SET status = 'ended', ended_at = ?, end_reason = ? WHERE id = ?`)
-      .run(this.now(), reason, gameId);
+  private finishGame(gameId: string, reason: GameRow['end_reason'] = null, endedAt = this.now()): void {
+    const finished = this.db
+      .prepare(`UPDATE games SET status = 'ended', ended_at = ?, end_reason = ? WHERE id = ? AND status = 'active'`)
+      .run(endedAt, reason, gameId);
+    if (finished.changes === 0) return;
     this.db
       .prepare(
         `UPDATE players

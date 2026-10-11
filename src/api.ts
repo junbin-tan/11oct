@@ -66,6 +66,7 @@ export const api = {
   createGame: (name: string) => request<StateResponse>('POST', '/api/games', { name }),
   joinGame: (code: string, name: string) => request<StateResponse>('POST', '/api/games/join', { code, name }),
   leaveGame: () => request<{ state: null }>('POST', '/api/game/leave'),
+  updateSettings: (duration_minutes: number) => request<StateResponse>('PUT', '/api/game/settings', { duration_minutes }),
   startGame: () => request<StateResponse>('POST', '/api/game/start'),
   endGame: () => request<StateResponse>('POST', '/api/game/end'),
   updateLocation: (lat: number, lng: number, accuracy: number | null, capturedAt: number, signal?: AbortSignal) =>

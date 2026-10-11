@@ -6,7 +6,9 @@ CREATE TABLE IF NOT EXISTS games (
   created_at INTEGER NOT NULL,
   started_at INTEGER,
   ended_at INTEGER,
-  end_reason TEXT CHECK (end_reason IN ('host_left', 'players_left'))
+  end_reason TEXT CHECK (end_reason IN ('host_left', 'players_left', 'time_up')),
+  duration_minutes INTEGER NOT NULL DEFAULT 30 CHECK (duration_minutes BETWEEN 30 AND 360 AND duration_minutes % 30 = 0),
+  ends_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS players (

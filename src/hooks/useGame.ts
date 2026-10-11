@@ -96,5 +96,5 @@ export function useGame() {
 
   const serverNow = useCallback(() => Date.now() + clockOffset, [clockOffset]);
 
-  return { state, reconnecting, error, setError, busy, run, leave, serverNow, visible };
+  return { state, reconnecting, error, setError, busy, run, leave, refresh, serverNow, visible };
 }

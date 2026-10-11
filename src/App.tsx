@@ -31,17 +31,21 @@ function initialRoomCode(): string {
 }
 
 export function App() {
-  const { state, reconnecting, error, busy, run, leave, serverNow, visible } = useGame();
+  const { state, reconnecting, error, busy, run, leave, refresh, serverNow, visible } = useGame();
   const view = viewFor(state);
   const [toast, setToast] = useState<string | null>(null);
   const [inviteCode] = useState(initialRoomCode);
   const [blockedInvite, setBlockedInvite] = useState<string | null>(null);
   const inviteHandled = useRef(false);
 
-  const sharing = view === 'lobby' || view === 'game';
-  const gps = useGeolocation(sharing, visible, serverNow);
-  const { radar, reconnecting: radarReconnecting } = useRadar(view === 'game', visible, serverNow, gps.sharedAt !== null);
   const nowMs = useNow(serverNow);
+  const deadlineReached = view === 'game' && state?.game.ends_at != null && nowMs >= state.game.ends_at;
+  const sharing = view === 'lobby' || (view === 'game' && !deadlineReached);
+  const gps = useGeolocation(sharing, visible, serverNow);
+  const { radar, reconnecting: radarReconnecting } = useRadar(view === 'game' && !deadlineReached, visible, serverNow, gps.sharedAt !== null);
+  useEffect(() => {
+    if (deadlineReached && visible) void refresh();
+  }, [deadlineReached, visible, refresh]);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -88,7 +92,9 @@ export function App() {
   return (
     <div className={`app ${role ? `role-${role}` : ''}`}>
       <div className="status-stack" aria-live="polite">
-        {reconnecting && <div className="banner"><span className="status-pulse" aria-hidden />Reconnecting…</div>}
+        {deadlineReached ? (
+          <div className="banner">{reconnecting ? 'Time’s up—reconnecting for results.' : 'Time’s up! Fetching final results…'}</div>
+        ) : reconnecting && <div className="banner"><span className="status-pulse" aria-hidden />Reconnecting…</div>}
         {blockedInvite && view !== 'home' && view !== 'loading' && (
           <div className="banner">Exit this room or finish the game before joining {blockedInvite}.</div>
         )}
@@ -117,6 +123,7 @@ export function App() {
           busy={busy}
           onEnableGps={gps.enable}
           onResetGps={gps.reset}
+          onDurationChange={(minutes) => void run(() => api.updateSettings(minutes))}
           onStart={() => void run(() => api.startGame())}
           onExit={leave}
         />

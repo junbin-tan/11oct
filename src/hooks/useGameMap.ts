@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { MapResponse } from '../types';
 
-/** Mounted only by the map dialog; visibility and unmount cancel pending work. */
+/** Used by the radar and map dialog; visibility and unmount cancel pending work. */
 export function useGameMap(visible: boolean) {
   const [snapshot, setSnapshot] = useState<MapResponse | null>(null);
   const [reconnecting, setReconnecting] = useState(false);

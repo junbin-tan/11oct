@@ -5,7 +5,12 @@ export function useNow(serverNow: () => number, intervalMs = 1_000): number {
   useEffect(() => {
     setNow(serverNow());
     const timer = setInterval(() => setNow(serverNow()), intervalMs);
-    return () => clearInterval(timer);
+    const syncOnReturn = () => { if (document.visibilityState === 'visible') setNow(serverNow()); };
+    document.addEventListener('visibilitychange', syncOnReturn);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', syncOnReturn);
+    };
   }, [serverNow, intervalMs]);
   return now;
 }

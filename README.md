@@ -30,6 +30,8 @@ npm start
 
 Browsers only expose location and camera on `https://` pages or `http://localhost`. A phone opening a laptop’s plain HTTP address cannot grant those permissions. Use the deployed HTTPS address for a real game.
 
+Every round has a time limit: the host chooses 30 minutes to 6 hours in 30-minute steps in the lobby (default: 30 minutes). Catch every runner before the countdown reaches zero, or the remaining runners win. The duration locks when the chase starts. The server enforces the deadline even when phones are locked or disconnected; refreshing does not reset it. The host can still end the round early.
+
 Keep the page open and visible. Mobile browsers pause timers, GPS, and the camera when the phone locks or the tab is hidden. On return, the app fetches the current game and the next eligible radar snapshot. It does not track anyone in the background.
 
 Location sharing stores only the latest fix. It is cleared when the round ends, and games older than 24 hours are deleted.

@@ -13,7 +13,7 @@ interface ResultsProps {
 
 export function Results({ state, onNewGame, busy }: ResultsProps) {
   const { game, players, me } = state;
-  const duration = game.started_at && game.ended_at ? game.ended_at - game.started_at : 0;
+  const duration = game.started_at !== null && game.ended_at !== null ? game.ended_at - game.started_at : 0;
   const totalTags = players.reduce((sum, p) => sum + p.tag_count, 0);
   const survivors = players.filter((p) => p.role === 'runner' && p.left_at === null);
   const departureEnding = game.end_reason === 'host_left' || game.end_reason === 'players_left';
@@ -27,9 +27,11 @@ export function Results({ state, onNewGame, busy }: ResultsProps) {
         {!departureEnding && <div className="confetti" aria-hidden><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>}
         <p className="eyebrow round-complete">{departureEnding ? 'Chase ended' : 'Round complete'}</p>
         <GameCharacter role={survivors.length === 0 ? 'catcher' : 'runner'} className="results-character" celebratory={!departureEnding} />
-        <h1 className="results-title">{departureEnding ? 'Game ended' : survivors.length === 0 ? (caughtAll ? 'Caught them all!' : 'No runners remaining') : 'Still running!'}</h1>
+        <h1 className="results-title">{game.end_reason === 'time_up' ? 'Time’s up! Runners win' : departureEnding ? 'Game ended' : survivors.length === 0 ? (caughtAll ? 'Caught them all!' : 'No runners remaining') : 'Still running!'}</h1>
         <p>
-          {game.end_reason === 'host_left'
+          {game.end_reason === 'time_up'
+            ? `${survivors.map((p) => p.name).join(', ')} survived the ${game.duration_minutes}-minute chase.`
+            : game.end_reason === 'host_left'
             ? 'The host left the game.'
             : game.end_reason === 'players_left'
               ? 'There are no longer enough runners and catchers to continue.'

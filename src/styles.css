@@ -205,19 +205,16 @@ div.notice { align-items: stretch; flex-direction: column; }
 .legend-marker.catcher, .role-dot.catcher { border-radius: 2px; background: var(--catcher); transform: rotate(45deg) scale(.85); }
 .radar-stage { position: relative; padding: 11px; background-color: #faf7ff; background-image: radial-gradient(#dbd0e9 .8px, transparent .8px); background-size: 14px 14px; }
 .radar { position: relative; width: 100%; max-width: 370px; margin: 0 auto; display: block; }
-.radar-bg { fill: #f0eafa; stroke: #6b527e; stroke-width: 1.5; }
-.radar-ring, .radar-axis { fill: none; stroke: #9d88b2; stroke-width: .75; }
-.radar-axis { stroke-dasharray: 3 5; }
-.radar-north, .radar-scale, .radar-label { fill: var(--ink); font-family: 'Manrope', Arial, sans-serif; font-size: 9px; font-weight: 800; text-anchor: middle; }
-.radar-north { font-size: 10px; }
-.radar-scale { fill: #655274; font-size: 7px; font-weight: 600; text-anchor: start; }
-.radar-label { paint-order: stroke; stroke: #faf7ff; stroke-width: 3px; stroke-linejoin: round; }
-.radar-me { fill: var(--warning); stroke: var(--ink); stroke-width: 2; }
-.radar-dot { stroke: #fff; stroke-width: 2; }
-.radar-dot.runner { fill: var(--runner); }
-.radar-dot.catcher { fill: var(--catcher); }
-.radar-uncertainty { fill: #7650b218; stroke: #7650b2; stroke-width: .65; stroke-dasharray: 3 2; }
-.radar-aging { opacity: .58; }
+.radar-map { aspect-ratio: 1; }
+.radar-map-circle { position: absolute; inset: 4.666667%; overflow: hidden; border-radius: 50%; isolation: isolate; background: #f1ede5; box-shadow: 0 0 0 4px #f0eafa, 0 0 0 5px #6b527e; }
+.radar-map-north { position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: var(--ink); font-size: 11px; font-weight: 800; }
+.radar-map-range { position: absolute; z-index: 800; top: 9px; left: 50%; transform: translateX(-50%); padding: 2px 6px; border-radius: 5px; background: #ffffffdf; color: var(--ink); font-size: 10px; font-weight: 700; pointer-events: none; }
+.radar-map-waiting { position: absolute; inset: 22% 12%; display: grid; place-items: center; text-align: center; color: var(--muted-strong); font-size: .75rem; }
+.radar-map-reconnecting { position: absolute; z-index: 800; top: 20%; left: 14%; right: 14%; padding: 4px; background: #fff1e8ed; text-align: center; font-size: .65rem; }
+.radar-map .leaflet-bottom.leaflet-right { bottom: 11%; width: 100%; text-align: center; }
+.radar-map .leaflet-right .leaflet-control-attribution { float: none; display: inline-block; max-width: 60%; margin: 0; font-size: 9px; line-height: 1.4; }
+.radar-map .map-tile-error { bottom: 19%; left: 16%; right: 16%; padding: 6px 8px; gap: 4px; font-size: .62rem; text-align: center; justify-content: center; }
+.radar-map .map-tile-error button { min-height: 30px; padding: 4px 8px; font-size: .62rem; box-shadow: none; }
 .radar-meta { padding: 10px 14px; border-top: 1px solid var(--line); color: var(--muted-strong); font-size: .64rem; line-height: 1.6; text-align: center; }
 .radar-panel > .notice { margin: 0 12px 12px; }
 .nearby-section { padding: 12px; border-top: 1px solid var(--line); }
@@ -416,3 +413,16 @@ dialog.modal-map { width: 100%; max-width: none; height: 100dvh; max-height: non
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }
+
+/* Shared round length and server-synchronized countdown. */
+.round-settings { display: grid; gap: 14px; padding: 20px; border: 2px solid var(--ink); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); }
+.round-goal { margin-top: 6px; font-size: .9rem; font-weight: 800; line-height: 1.5; }
+.duration-control { display: flex; align-items: center; justify-content: center; gap: 24px; }
+.duration-control .btn { min-width: 48px; font-size: 1.3rem; }
+.duration-control output { display: grid; gap: 3px; min-width: 76px; text-align: center; font-size: 1.8rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.duration-control output small { color: var(--muted-strong); font-size: .7rem; font-weight: 600; }
+.duration-hint { color: var(--muted-strong); font-size: .73rem; line-height: 1.5; }
+.metric-strip .time-left { background: var(--warning); }
+.metric-strip .time-left strong { font-size: 1.3rem; }
+.metric-strip .time-left.running-low { background: var(--catcher-soft); }
+.metric-strip .time-left.running-low strong { color: var(--danger); }

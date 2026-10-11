@@ -5,6 +5,9 @@ import { useGameMap } from '../src/hooks/useGameMap';
 import { Game } from '../src/views/Game';
 import type { MapResponse, GameState } from '../src/types';
 
+// The embedded radar map has its own integration coverage.
+vi.mock('../src/components/RadarMap', () => ({ RadarMap: () => null }));
+
 const apiMock = vi.hoisted(() => ({ getMap: vi.fn() }));
 vi.mock('../src/api', () => ({ api: apiMock }));
 const leaflet = vi.hoisted(() => {
@@ -45,7 +48,7 @@ const snapshot = (): MapResponse => ({ server_now: at, snapshot_at: at, unavaila
 const state: GameState = {
   server_now: at,
   me: { player_id: 'me', name: 'Host', role: 'catcher', is_host: true, tag_code: 'ABCDEF', qr_payload: 'tag:ABCDEF:me:secret' },
-  game: { code: 'ABCDEF', status: 'active', host_player_id: 'me', created_at: at, started_at: at, ended_at: null, end_reason: null },
+  game: { code: 'ABCDEF', status: 'active', host_player_id: 'me', created_at: at, started_at: at, ended_at: null, duration_minutes: 30, ends_at: null, end_reason: null },
   players: [
     { id: 'me', name: 'Host', role: 'catcher', is_host: true, gps_ready: true, tag_count: 0, caught_at: null, left_at: null },
     { id: 'runner', name: 'Runner', role: 'runner', is_host: false, gps_ready: true, tag_count: 0, caught_at: null, left_at: null },

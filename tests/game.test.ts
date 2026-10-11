@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../server/app.js';
 import { openDb, type Db } from '../server/db.js';
 import { GAME_RETENTION_MS } from '../server/game/service.js';
@@ -19,6 +19,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await app.close();
   db.close();
+  vi.useRealTimers();
 });
 
 class Client {
@@ -554,8 +555,9 @@ describe('cleanup', () => {
   it('deletes games older than the retention window', async () => {
     const { host } = await createRoom(['Alice', 'Bob'], true);
     clock += GAME_RETENTION_MS + 1;
-    const { service } = await buildApp({ db, config, now: () => clock, rateLimit: false });
-    expect(service.cleanup().deletedGames).toBe(1);
+    const restarted = await buildApp({ db, config, now: () => clock, rateLimit: false });
+    expect(restarted.service.cleanup().deletedGames).toBe(1);
+    await restarted.app.close();
     expect(await host.state()).toBeNull();
   });
 });
@@ -563,5 +565,110 @@ describe('cleanup', () => {
 describe('health', () => {
   it('reports healthy', async () => {
     expect((await app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ ok: true });
+  });
+});
+
+
+describe('timed rounds', () => {
+  it('defaults to 30 minutes and shares saved settings with every player', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob']);
+    expect((await host.state()).game).toMatchObject({ duration_minutes: 30, ends_at: null });
+    expect((await host.call('PUT', '/api/game/settings', { duration_minutes: 90 })).status).toBe(200);
+    expect((await others[0]!.state()).game.duration_minutes).toBe(90);
+    const started = (await host.call('POST', '/api/game/start')).body.state.game;
+    expect(started).toMatchObject({ started_at: clock, ends_at: clock + 90 * 60_000 });
+    clock += 60_000;
+    expect((await host.state()).game.ends_at).toBe(started.ends_at);
+  });
+
+  it('restricts settings to the host, valid 30-minute increments, and the lobby', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob']);
+    expect((await others[0]!.call('PUT', '/api/game/settings', { duration_minutes: 60 })).body.error).toBe('HOST_ONLY');
+    for (const duration_minutes of [null, '60', 0, -30, 15, 31, 60.5, 390]) {
+      expect((await host.call('PUT', '/api/game/settings', { duration_minutes })).body.error).toBe('INVALID_INPUT');
+    }
+    expect((await host.call('PUT', '/api/game/settings')).body.error).toBe('INVALID_INPUT');
+    for (const duration_minutes of [360, 30]) {
+      expect((await host.call('PUT', '/api/game/settings', { duration_minutes })).status).toBe(200);
+    }
+    await host.call('POST', '/api/game/start');
+    expect((await host.call('PUT', '/api/game/settings', { duration_minutes: 60 })).body.error).toBe('ROOM_STARTED');
+  });
+
+  it('accepts the last catch immediately before the deadline and preserves early results', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    const code = (await others[0]!.state()).me.tag_code;
+    const deadline = (await host.state()).game.ends_at;
+    clock = deadline - 1;
+    const tagged = await host.call('POST', '/api/game/tag', { code });
+    expect(tagged.body.state.game).toMatchObject({ status: 'ended', ended_at: clock, end_reason: null });
+    clock = deadline + 10_000;
+    expect((await host.state()).game).toEqual(tagged.body.state.game);
+  });
+
+  it.each([0, 1, 60_000])('rejects a tag %i ms after the deadline and commits expiration despite the error', async (delay) => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    const code = (await others[0]!.state()).me.tag_code;
+    const deadline = (await host.state()).game.ends_at;
+    await host.location(1.3, 103.8);
+    await others[0]!.location(1.301, 103.8);
+    await host.call('GET', '/api/game/radar');
+    clock = deadline + delay;
+    expect((await host.call('POST', '/api/game/tag', { code })).body.error).toBe('GAME_NOT_ACTIVE');
+    // Inspect storage directly: getState must not be needed to commit the ending.
+    expect(db.prepare('SELECT status, ended_at, end_reason FROM games').get())
+      .toEqual({ status: 'ended', ended_at: deadline, end_reason: 'time_up' });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM tag_events').get()).toEqual({ n: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM players WHERE latitude IS NOT NULL OR captured_at IS NOT NULL OR radar_snapshot IS NOT NULL').get()).toEqual({ n: 0 });
+    expect((await others[0]!.state()).me.role).toBe('runner');
+    const before = (await host.state()).game;
+    await host.call('POST', '/api/game/end');
+    clock += 5000;
+    expect((await host.state()).game).toEqual(before);
+  });
+
+  it.each(['state', 'radar', 'map', 'location', 'leave', 'end'])('enforces expiration before %s', async (action) => {
+    const { host } = await createRoom(['Alice', 'Bob'], true);
+    clock = (await host.state()).game.ends_at;
+    if (action === 'state') expect((await host.state()).game.end_reason).toBe('time_up');
+    else if (action === 'location') expect((await host.location(1.3, 103.8)).body.error).toBe('GAME_NOT_ACTIVE');
+    else if (action === 'leave') await host.call('POST', '/api/game/leave');
+    else if (action === 'end') expect((await host.call('POST', '/api/game/end')).body.error).toBe('GAME_NOT_ACTIVE');
+    else expect((await host.call('GET', `/api/game/${action}`)).body.error).toBe('GAME_NOT_ACTIVE');
+    expect(db.prepare('SELECT end_reason FROM games').get()).toEqual({ end_reason: 'time_up' });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM players WHERE left_at IS NOT NULL').get()).toEqual({ n: 0 });
+  });
+
+  it('expires rounds without clients, recovers at startup, and stops its sweep on close', async () => {
+    const { host } = await createRoom(['Alice', 'Bob'], true);
+    const deadline = (await host.state()).game.ends_at;
+    await app.close();
+    vi.useFakeTimers();
+    const restarted = await buildApp({ db, config, now: () => clock, rateLimit: false });
+    app = restarted.app;
+    const sweep = vi.spyOn(restarted.service, 'expireGames');
+    clock = deadline;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(db.prepare('SELECT end_reason, ended_at FROM games').get()).toEqual({ end_reason: 'time_up', ended_at: deadline });
+    await app.close();
+    sweep.mockClear();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(sweep).not.toHaveBeenCalled();
+    // Simulate a second round whose deadline passed during server downtime.
+    db.prepare("UPDATE games SET status = 'active', ended_at = NULL, end_reason = NULL").run();
+    clock += 60_000;
+    ({ app } = await buildApp({ db, config, now: () => clock, rateLimit: false }));
+    expect(db.prepare('SELECT end_reason, ended_at FROM games').get()).toEqual({ end_reason: 'time_up', ended_at: deadline });
+  });
+
+  it('retains an old lobby’s active round until its deadline', async () => {
+    const { host } = await createRoom(['Alice', 'Bob']);
+    clock += GAME_RETENTION_MS - 60_000;
+    await host.call('POST', '/api/game/start');
+    clock += 120_000;
+    const second = await buildApp({ db, config, now: () => clock, rateLimit: false });
+    expect(second.service.cleanup().deletedGames).toBe(0);
+    expect((await host.state()).game.status).toBe('active');
+    await second.app.close();
   });
 });

@@ -37,7 +37,9 @@ export interface GameState {
     created_at: number;
     started_at: number | null;
     ended_at: number | null;
-    end_reason: 'host_left' | 'players_left' | null;
+    end_reason: 'host_left' | 'players_left' | 'time_up' | null;
+    duration_minutes: number;
+    ends_at: number | null;
   };
   players: PlayerSummary[];
   events: TagEvent[];
