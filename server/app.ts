@@ -9,6 +9,7 @@ import { GameService } from './game/service.js';
 import { PLAYER_REQUEST_LIMIT, RATE_WINDOW } from './limits.js';
 import { clientAddress, trustNearestProxy } from './proxy.js';
 import { gameRoutes, SESSION_COOKIE } from './routes/game.js';
+import { ctfRoutes } from './ctf/routes.js';
 
 export interface AppOptions {
   db: Db;
@@ -68,6 +69,7 @@ export async function buildApp({ db, config, now, rateLimit = true, logger = fal
   app.get('/api/health', health);
 
   await app.register(gameRoutes, { service, cookieSecure: config.cookieSecure });
+  await app.register(ctfRoutes, { db, cookieSecure: config.cookieSecure, now });
 
   if (config.clientDir) {
     await app.register(fastifyStatic, {
