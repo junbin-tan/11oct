@@ -1,5 +1,7 @@
 import QRCode from 'react-qr-code';
 import { ModalDialog } from './ModalDialog';
+import { PlayerAvatar } from './PlayerAvatar';
+import { UiIcon } from './UiIcon';
 
 interface PlayerQrProps {
   name: string;
@@ -10,16 +12,28 @@ interface PlayerQrProps {
 
 export function PlayerQr({ name, payload, tagCode, onClose }: PlayerQrProps) {
   return (
-    <ModalDialog label="My tag QR" onClose={onClose}>
-      <div className="modal-card">
-        <p className="eyebrow">Runner signal</p>
-        <h2>{name}</h2>
-        <p>If a catcher gets you, show them this.</p>
-        <div className="qr-box">
-          <QRCode value={payload} size={240} />
+    <ModalDialog label="My tag QR" onClose={onClose} variant="fullscreen">
+      <div className="qr-shell">
+        <header className="modal-topbar">
+          <button className="icon-button" onClick={onClose} aria-label="Close QR code"><UiIcon name="close" /></button>
+          <span className="modal-title">My runner code</span>
+          <span className="topbar-spacer" />
+        </header>
+        <div className="qr-player">
+          <PlayerAvatar name={name} role="runner" />
+          <div><p className="eyebrow">Runner</p><h2>{name}</h2></div>
         </div>
-        <p className="tag-code" aria-label="Manual tag code">{tagCode}</p>
-        <button className="btn secondary" onClick={onClose}>Close</button>
+        <div className="qr-presentation">
+          <p>Let a Catcher scan this when they reach you.</p>
+          <div className="qr-box">
+            <QRCode value={payload} size={256} />
+          </div>
+          <div className="manual-tag-code">
+            <span>Manual code</span>
+            <strong aria-label="Manual tag code">{tagCode}</strong>
+          </div>
+        </div>
+        <button className="btn runner-action" onClick={onClose}>Back to the game</button>
       </div>
     </ModalDialog>
   );

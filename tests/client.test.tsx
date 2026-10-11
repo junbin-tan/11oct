@@ -466,6 +466,32 @@ describe('foreground location delivery', () => {
     expect(apiMock.updateLocation).not.toHaveBeenCalled(); expect(acquire).not.toHaveBeenCalled();
   });
 
+  it('does not restart a watch on permission grant, and stops it on revocation', async () => {
+    const permission = Object.assign(new EventTarget(), { state: 'prompt' });
+    Object.defineProperty(navigator, 'permissions', { configurable: true,
+      value: { query: vi.fn().mockResolvedValue(permission) } });
+    start(); await act(async () => {});
+    await act(async () => { permission.state = 'granted'; permission.dispatchEvent(new Event('change')); });
+    expect(reports).toHaveLength(1);
+    await act(async () => reports[0]!(sample()));
+    await act(async () => { permission.state = 'denied'; permission.dispatchEvent(new Event('change')); });
+    expect(status()).toBe('denied:empty');
+    expect(clearWatch).toHaveBeenCalledWith(1);
+    await advance(6_000); await act(async () => reports[0]!(sample()));
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a failed pending reading when it expires instead of re-dating it', async () => {
+    apiMock.updateLocation.mockRejectedValue(new Error('offline'));
+    start(); await act(async () => reports[0]!(sample()));
+    await advance(30_000);
+    const attempts = apiMock.updateLocation.mock.calls.length;
+    const timestamps = apiMock.updateLocation.mock.calls.map((call) => call[3]);
+    expect(new Set(timestamps).size).toBe(1);
+    await advance(15_000);
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(attempts);
+  });
+
   it('reports poor accuracy even after a successful upload', async () => {
     start(); await act(async () => reports[0]!(sample(1.3, Date.now(), 120)));
     expect(status()).toBe('poor:fixed');

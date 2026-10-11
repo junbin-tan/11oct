@@ -1,6 +1,7 @@
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ModalDialog } from './ModalDialog';
+import { UiIcon } from './UiIcon';
 
 const REPEAT_SUPPRESS_MS = 3_000;
 const SCAN_DELAY_MS = 150;
@@ -30,6 +31,7 @@ export function QrScanner({ onSubmit, onClose }: QrScannerProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
 
   const submit = async (input: { payload: string } | { code: string }) => {
     if (busy.current) return;
@@ -95,33 +97,58 @@ export function QrScanner({ onSubmit, onClose }: QrScannerProps) {
     if (code.trim()) void submit({ code: code.trim() });
   };
 
+  const showManual = manualOpen || cameraError !== null;
+
   return (
-    <ModalDialog label="Scan to tag" onClose={onClose}>
-      <div className="modal-card">
-        <p className="eyebrow">Catcher signal</p>
-        <h2>Scan to tag</h2>
-        {cameraError ? (
-          <p className="notice">{cameraError}</p>
-        ) : (
-          <video ref={videoRef} className="scanner-video" muted playsInline autoPlay />
-        )}
-        <form onSubmit={onManual} className="row">
-          <input
-            aria-label="Tag code"
-            placeholder="Tag code"
-            value={code}
-            maxLength={6}
-            autoCapitalize="characters"
-            autoComplete="off"
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-          />
-          <button className="btn" disabled={submitting || code.trim().length !== 6}>
-            Tag
+    <ModalDialog label="Scan to tag" onClose={onClose} variant="fullscreen">
+      <div className="scanner-shell">
+        <header className="modal-topbar">
+          <button className="icon-button" onClick={onClose} aria-label="Close scanner"><UiIcon name="close" /></button>
+          <span className="modal-title">Scan a Runner</span>
+          <span className="catcher-mini-mark" aria-hidden />
+        </header>
+
+        <div className={`scanner-stage ${cameraError ? 'has-error' : ''}`}>
+          {!cameraError && <video ref={videoRef} className="scanner-video" muted playsInline autoPlay />}
+          <span className="scan-corner top-left" aria-hidden />
+          <span className="scan-corner top-right" aria-hidden />
+          <span className="scan-corner bottom-left" aria-hidden />
+          <span className="scan-corner bottom-right" aria-hidden />
+          {cameraError && <p className="scanner-error"><UiIcon name="scan" size={28} />{cameraError}</p>}
+        </div>
+
+        <div className="scanner-copy">
+          <h2>Line up their QR code</h2>
+          <p>Hold steady—the tag happens automatically.</p>
+        </div>
+
+        {!showManual && (
+          <button className="btn scanner-manual-toggle" type="button" onClick={() => setManualOpen(true)}>
+            Enter code instead
           </button>
-        </form>
-        {submitting && <p>Tagging…</p>}
-        {message && <p className="error">{message}</p>}
-        <button className="btn secondary" onClick={onClose}>Close</button>
+        )}
+
+        {showManual && (
+          <form onSubmit={onManual} className="manual-code-panel">
+            <label>
+              Runner’s tag code
+              <input
+                aria-label="Tag code"
+                placeholder="ABC123"
+                value={code}
+                maxLength={6}
+                autoCapitalize="characters"
+                autoComplete="off"
+                className="code-input"
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+              />
+            </label>
+            <button className="btn catcher-action" aria-label="Tag" disabled={submitting || code.trim().length !== 6}>
+              <UiIcon name="scan" />{submitting ? 'Tagging…' : 'Tag Runner'}
+            </button>
+          </form>
+        )}
+        {message && <p className="error scanner-message" role="alert">{message}</p>}
       </div>
     </ModalDialog>
   );

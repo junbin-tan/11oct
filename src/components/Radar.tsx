@@ -43,7 +43,15 @@ export function Radar({ radar, players, nowMs, reconnecting = false }: RadarProp
 
   return (
     <section className="radar-panel" aria-label="Radar">
-      <svg className="radar" viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="North-up radar, 500 metre range">
+      <div className="radar-heading">
+        <div><span className="live-dot" aria-hidden />Live radar</div>
+        <div className="radar-legend" aria-label="Radar legend">
+          <span><i className="legend-marker runner" aria-hidden />Runner</span>
+          <span><i className="legend-marker catcher" aria-hidden />Catcher</span>
+        </div>
+      </div>
+      <div className="radar-stage">
+        <svg className="radar" viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="North-up radar, 500 metre range">
         <defs><clipPath id={clipId}><circle cx={CENTER} cy={CENTER} r={PLOT_RADIUS} /></clipPath></defs>
         <circle cx={CENTER} cy={CENTER} r={PLOT_RADIUS + 4} className="radar-bg" />
         {[0.25, 0.5, 0.75, 1].map((f) => (
@@ -71,7 +79,8 @@ export function Radar({ radar, players, nowMs, reconnecting = false }: RadarProp
             </g>
           );
         })}
-      </svg>
+        </svg>
+      </div>
 
       <p className="radar-meta">
         {!radar
@@ -93,22 +102,24 @@ export function Radar({ radar, players, nowMs, reconnecting = false }: RadarProp
       {points.some(({ uncertain }) => uncertain) && <p className="radar-meta">Uncertain positions are listed below without a direction.</p>}
 
       {points.length > 0 && (
-        <ul className="nearby">
-          {points
-            .sort((a, b) => a.point.distance_m - b.point.distance_m)
-            .map(({ point, player, age, expired, uncertain, aging }) => (
+        <div className="nearby-section">
+          <div className="nearby-title"><strong>Nearby players</strong><span>{points.length}</span></div>
+          <ul className="nearby">
+            {points
+              .sort((a, b) => a.point.distance_m - b.point.distance_m)
+              .map(({ point, player, age, expired, uncertain, aging }) => (
               <li key={point.player_id}>
                 <span className={`role-dot ${player.role}`} aria-hidden />
-                <strong>{player.name}</strong>
-                <span>{player.role === 'catcher' ? 'Catcher' : 'Runner'}</span>
-                <span>
+                <span className="nearby-player"><strong>{player.name}</strong><small>{player.role === 'catcher' ? 'Catcher' : 'Runner'}</small></span>
+                <span className="nearby-distance">
                   {expired ? 'Location expired' : uncertain ? 'Position uncertain' : `≈ ${point.distance_m} m (±${point.uncertainty_m} m)`}
                   {age === null ? ' · age unknown' : ` · ${Math.floor(age / 1000)}s old`}
                   {!expired && aging && ' · aging'}
                 </span>
               </li>
-            ))}
-        </ul>
+              ))}
+          </ul>
+        </div>
       )}
     </section>
   );

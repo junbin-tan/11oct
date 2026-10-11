@@ -42,7 +42,8 @@ export function useGeolocation(
     let permission: PermissionStatus | undefined;
     const changed = () => {
       if (cancelled) return;
-      if (permission?.state === 'granted') enable();
+      // Granting the prompt may happen during an existing watch; do not restart it.
+      if (permission?.state === 'granted') setEnabled(true);
       if (permission?.state === 'denied') {
         generation.current++;
         setEnabled(false);
@@ -56,7 +57,7 @@ export function useGeolocation(
       changed();
     }).catch(() => {});
     return () => { cancelled = true; permission?.removeEventListener?.('change', changed); };
-  }, [supported, enable]);
+  }, [supported]);
 
   useEffect(() => {
     setFix(null);
@@ -105,6 +106,7 @@ export function useGeolocation(
         nextAttempt.current = Math.max(nextAttempt.current, Date.now() + Math.max(0, ack.next_upload_at - ack.server_now));
         disconnected = false;
         if (ack.accepted) {
+          sensorError = null;
           lastAck = sample;
           setSharedAt(sample.at);
         } else if (ack.reason === 'throttled') {
@@ -142,7 +144,7 @@ export function useGeolocation(
       if (latest && reading.capturedAt <= latest.sensorAt) return;
       latest = {
         lat: reading.lat, lng: reading.lng, accuracy: reading.accuracy,
-        at: Math.round(nowRef.current() - age), sensorAt: reading.capturedAt,
+        at: Math.round(nowRef.current() - Math.max(0, age)), sensorAt: reading.capturedAt,
       };
       sensorError = null;
       pending = latest;

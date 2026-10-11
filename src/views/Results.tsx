@@ -1,3 +1,5 @@
+import { PlayerAvatar } from '../components/PlayerAvatar';
+import { UiIcon } from '../components/UiIcon';
 import { formatDuration } from '../hooks/useNow';
 import { plural } from '../plural';
 import type { GameState } from '../types';
@@ -15,36 +17,47 @@ export function Results({ state, onNewGame }: ResultsProps) {
   const ranked = [...players].sort((a, b) => b.tag_count - a.tag_count || a.name.localeCompare(b.name));
 
   return (
-    <main className="screen results">
-      <header className="results-header">
-        <span className="results-star" aria-hidden>✦</span>
-        <p className="eyebrow">The signal has ended</p>
-        <h1>Game over</h1>
+    <main className="screen results has-action-dock">
+      <header className={`results-hero ${survivors.length === 0 ? 'catchers-win' : 'runners-survive'}`}>
+        <div className="confetti" aria-hidden><i /><i /><i /><i /><i /></div>
+        <p className="eyebrow">Game over</p>
+        <h1>{survivors.length === 0 ? 'Caught them all!' : 'Still running!'}</h1>
+        <p>
+          {survivors.length === 0
+            ? 'The Catchers took the whole field.'
+            : `${survivors.map((p) => p.name).join(', ')} survived the chase.`}
+        </p>
       </header>
-      <p className="lede">
-        {survivors.length === 0
-          ? 'Everyone was caught.'
-          : `${survivors.map((p) => p.name).join(', ')} survived.`}
-      </p>
-      <div className="stats">
-        <span>{formatDuration(duration)} played</span>
-        <span>{plural(totalTags, 'tag')}</span>
+
+      <div className="result-metrics">
+        <span><strong>{formatDuration(duration)}</strong><small>Time played</small></span>
+        <span><strong>{totalTags}</strong><small>{totalTags === 1 ? 'Tag' : 'Tags'}</small></span>
+        <span><strong>{survivors.length}</strong><small>{survivors.length === 1 ? 'Survivor' : 'Survivors'}</small></span>
       </div>
 
-      <ul className="roster">
-        {ranked.map((p) => (
-          <li key={p.id}>
-            <span className={`role-dot ${p.role}`} aria-hidden />
-            <strong>{p.name}</strong>
-            {p.id === me.player_id && <span className="muted"> (you)</span>}
-            <span className="muted">
-              {p.role === 'catcher' ? (p.caught_at ? 'Caught' : 'First catcher') : 'Survived'} · {plural(p.tag_count, 'tag')}
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Final standings</p>
+          <h2>Players</h2>
+        </div>
+      </div>
+      <ol className="roster player-roster results-roster">
+        {ranked.map((p, index) => (
+          <li key={p.id} className={`player-row ${p.role}`}>
+            <span className="rank-number" aria-hidden>{index + 1}</span>
+            <PlayerAvatar name={p.name} role={p.role} />
+            <span className="player-copy">
+              <strong>{p.name}{p.id === me.player_id ? ' (you)' : ''}</strong>
+              <span>{p.role === 'catcher' ? (p.caught_at ? 'Caught' : 'First Catcher') : 'Survived'}</span>
             </span>
+            <strong className="tag-score">{plural(p.tag_count, 'tag')}</strong>
           </li>
         ))}
-      </ul>
+      </ol>
 
-      <button className="btn primary" onClick={onNewGame}>New game</button>
+      <div className="action-dock">
+        <button className="btn primary dock-action" onClick={onNewGame}><UiIcon name="play" />New game</button>
+      </div>
     </main>
   );
 }

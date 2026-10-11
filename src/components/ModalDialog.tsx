@@ -4,9 +4,10 @@ interface ModalDialogProps {
   label: string;
   children: ReactNode;
   onClose: () => void;
+  variant?: 'card' | 'fullscreen';
 }
 
-export function ModalDialog({ label, children, onClose }: ModalDialogProps) {
+export function ModalDialog({ label, children, onClose, variant = 'card' }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
 
@@ -35,7 +36,7 @@ export function ModalDialog({ label, children, onClose }: ModalDialogProps) {
   return (
     <dialog
       ref={dialogRef}
-      className="modal"
+      className={`modal modal-${variant}`}
       aria-label={label}
       onCancel={(event) => {
         event.preventDefault();

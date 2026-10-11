@@ -28,16 +28,44 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
   return (
     <main className="screen home">
       <header className="home-hero">
-        <div className="hero-mark" aria-hidden><span>✦</span></div>
-        <p className="eyebrow">A live game in the world around you</p>
+        <div className="game-mark" aria-hidden>
+          <span className="game-mark-ring ring-one" />
+          <span className="game-mark-ring ring-two" />
+          <span className="game-mark-player runner" />
+          <span className="game-mark-player catcher" />
+        </div>
+        <p className="eyebrow">Run · Scan · Recruit</p>
         <h1>GPS Tag</h1>
+        <p className="lede">The real-world chase game where every catch grows the hunting team.</p>
       </header>
-      <p className="lede">Infection tag for your phone. Catchers scan runners’ QR codes; every catch joins the hunt.</p>
-      <p className="fine-print">
-        GPS is foreground-only. The game stores your latest fix, not your route, and clears it when the round ends.
-      </p>
 
-      <form onSubmit={submit} className="stack">
+      <form onSubmit={submit} className="join-card stack">
+        <div className="segmented" role="tablist" aria-label="Game action">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'create'}
+            className={mode === 'create' ? 'active' : ''}
+            onClick={() => setMode('create')}
+          >
+            Create
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'join'}
+            className={mode === 'join' ? 'active' : ''}
+            onClick={() => setMode('join')}
+          >
+            Join
+          </button>
+        </div>
+
+        <div className="form-intro">
+          <h2>{mode === 'create' ? 'Start a new chase' : 'Join the chase'}</h2>
+          <p>{mode === 'create' ? 'You’ll begin as the first Catcher.' : 'Enter the code your host shared.'}</p>
+        </div>
+
         <label>
           Your name
           <input
@@ -49,27 +77,6 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
             required
           />
         </label>
-
-        <div className="segmented" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'create'}
-            className={mode === 'create' ? 'active' : ''}
-            onClick={() => setMode('create')}
-          >
-            Create game
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'join'}
-            className={mode === 'join' ? 'active' : ''}
-            onClick={() => setMode('join')}
-          >
-            Join game
-          </button>
-        </div>
 
         {mode === 'join' && (
           <label>
@@ -90,6 +97,10 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
           {busy ? 'Please wait…' : mode === 'create' ? 'Create game' : 'Join game'}
         </button>
       </form>
+
+      <p className="privacy-note">
+        GPS works only while the game is open. We keep your latest position, never your route.
+      </p>
     </main>
   );
 }

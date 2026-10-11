@@ -83,14 +83,21 @@ export function App() {
 
   return (
     <div className={`app ${role ? `role-${role}` : ''}`}>
-      {reconnecting && <div className="banner">Reconnecting…</div>}
-      {blockedInvite && view !== 'home' && view !== 'loading' && (
-        <div className="banner">Finish this game before joining {blockedInvite}.</div>
-      )}
-      {error && <div className="banner error">{error}</div>}
+      <div className="status-stack" aria-live="polite">
+        {reconnecting && <div className="banner"><span className="status-pulse" aria-hidden />Reconnecting…</div>}
+        {blockedInvite && view !== 'home' && view !== 'loading' && (
+          <div className="banner">Finish this game before joining {blockedInvite}.</div>
+        )}
+        {error && <div className="banner error">{error}</div>}
+      </div>
       {toast && <div className="toast" role="status">{toast}</div>}
 
-      {view === 'loading' && <main className="screen"><p>Loading…</p></main>}
+      {view === 'loading' && (
+        <main className="screen loading-screen">
+          <div className="loading-orbit" aria-hidden><span /></div>
+          <p>Finding your game…</p>
+        </main>
+      )}
       {view === 'home' && (
         <Home
           initialCode={inviteCode}

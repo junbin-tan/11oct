@@ -1,3 +1,4 @@
+import { UiIcon } from '../components/UiIcon';
 import type { GpsStatus as Status } from '../hooks/useGeolocation';
 
 interface GpsStatusProps {
@@ -9,19 +10,19 @@ interface GpsStatusProps {
 export function GpsStatus({ status, onEnable, onResetGps }: GpsStatusProps) {
   switch (status) {
     case 'active':
-      return <p className="gps ok">Location shared</p>;
+      return <p className="gps gps-chip ok"><UiIcon name="location" size={17} />Location shared</p>;
     case 'sharing':
-      return <p className="gps">Sharing location…</p>;
+      return <p className="gps gps-chip"><span className="status-pulse" aria-hidden />Sharing location…</p>;
     case 'poor':
-      return <p className="gps notice">Poor accuracy. Try moving into an open area.</p>;
+      return <p className="gps notice"><UiIcon name="location" size={18} />Poor accuracy. Try moving into an open area.</p>;
     case 'aging':
-      return <p className="gps notice">Location aging. Finding a fresh reading…</p>;
+      return <p className="gps notice"><span className="status-pulse" aria-hidden />Location aging. Finding a fresh reading…</p>;
     case 'connection_lost':
-      return <p className="gps notice">Connection lost. Retrying location sharing…</p>;
+      return <p className="gps notice"><span className="status-pulse" aria-hidden />Connection lost. Retrying location sharing…</p>;
     case 'paused':
-      return <p className="gps notice">Location paused. Keep the game open to share.</p>;
+      return <p className="gps notice"><UiIcon name="location" size={18} />Location paused. Keep the game open to share.</p>;
     case 'requesting':
-      return <p className="gps">Finding your location…</p>;
+      return <p className="gps gps-chip"><span className="status-pulse" aria-hidden />Finding your location…</p>;
     case 'denied':
       return (
         <div className="gps notice">
@@ -46,8 +47,8 @@ export function GpsStatus({ status, onEnable, onResetGps }: GpsStatusProps) {
       return <p className="gps notice">This browser cannot share location. You can still play; the radar won’t show you.</p>;
     default:
       return (
-        <button className="btn secondary" onClick={onEnable}>
-          Enable GPS
+        <button className="btn location-action" onClick={onEnable}>
+          <UiIcon name="location" size={18} />Enable GPS
         </button>
       );
   }
