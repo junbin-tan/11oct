@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Db } from '../db.js';
 import { GameError } from '../errors.js';
 import { newId, normalizeCode, randomCode, randomToken } from './codes.js';
-import { buildSnapshot, isFresh, RADAR_INTERVAL_MS, type RadarSnapshot } from './radar.js';
+import { buildSnapshot, hasRecentLocation, isFresh, FIX_MAX_AGE_MS, RADAR_INTERVAL_MS, type RadarSnapshot } from './radar.js';
 
 export const MAX_PLAYERS = 30;
 export const LOCATION_MIN_INTERVAL_MS = 5_000;
@@ -35,6 +35,7 @@ interface PlayerRow {
   longitude: number | null;
   accuracy_m: number | null;
   location_at: number | null;
+  captured_at: number | null;
   radar_snapshot: string | null;
   radar_at: number | null;
 }
@@ -78,6 +79,8 @@ export type RadarResponse =
   | (RadarSnapshot & { next_ping_at: number; server_now: number })
   | {
       origin_available: false;
+      origin_captured_at: number | null;
+      origin_accuracy_m: number | null;
       snapshot_at: null;
       next_ping_at: null;
       server_now: number;
@@ -90,6 +93,14 @@ export interface LocationInput {
   lat: unknown;
   lng: unknown;
   accuracy: unknown;
+  captured_at?: unknown;
+}
+
+export interface LocationAck {
+  accepted: boolean;
+  reason: 'accepted' | 'throttled' | 'older' | 'expired' | 'future';
+  next_upload_at: number;
+  server_now: number;
 }
 
 export interface TagInput {
@@ -263,7 +274,7 @@ export class GameService {
     })();
   }
 
-  updateLocation(playerId: string, input: LocationInput): { accepted: boolean } {
+  updateLocation(playerId: string, input: LocationInput): LocationAck {
     const { lat, lng, accuracy } = input;
     if (
       typeof lat !== 'number' ||
@@ -284,22 +295,31 @@ export class GameService {
           ? accuracy
           : NaN;
     if (Number.isNaN(accuracyM)) throw new GameError('INVALID_INPUT', 'Invalid accuracy.');
+    const capturedAt = input.captured_at === undefined || input.captured_at === null ? null : input.captured_at;
+    if (capturedAt !== null && (typeof capturedAt !== 'number' || !Number.isSafeInteger(capturedAt) || capturedAt < 0)) {
+      throw new GameError('INVALID_INPUT', 'Invalid capture time.');
+    }
 
-    return this.db.transaction(() => {
+    return this.db.transaction((): LocationAck => {
       const me = this.requirePlayer(playerId);
       const game = this.getGame(me.game_id);
       if (game.status === 'ended') throw new GameError('GAME_NOT_ACTIVE', 'The game has ended.');
 
       const now = this.now();
-      if (me.location_at !== null && now - me.location_at < LOCATION_MIN_INTERVAL_MS) {
-        return { accepted: false };
-      }
+      const nextUpload = Math.max(now, (me.location_at ?? (now - LOCATION_MIN_INTERVAL_MS)) + LOCATION_MIN_INTERVAL_MS);
+      const rejected = (reason: LocationAck['reason']): LocationAck =>
+        ({ accepted: false, reason, next_upload_at: nextUpload, server_now: now });
+      if (capturedAt !== null && capturedAt > now + 5_000) return rejected('future');
+      if (capturedAt !== null && now - capturedAt > FIX_MAX_AGE_MS) return rejected('expired');
+      const effectiveCapture = capturedAt === null ? null : Math.min(now, capturedAt);
+      if (effectiveCapture !== null && me.captured_at !== null && effectiveCapture <= me.captured_at) return rejected('older');
+      if (nextUpload > now) return rejected('throttled');
       this.db
         .prepare(
-          `UPDATE players SET latitude = ?, longitude = ?, accuracy_m = ?, location_at = ? WHERE id = ?`,
+          `UPDATE players SET latitude = ?, longitude = ?, accuracy_m = ?, location_at = ?, captured_at = ? WHERE id = ?`,
         )
-        .run(lat, lng, accuracyM, now, me.id);
-      return { accepted: true };
+        .run(lat, lng, accuracyM, now, effectiveCapture, me.id);
+      return { accepted: true, reason: 'accepted', next_upload_at: now + LOCATION_MIN_INTERVAL_MS, server_now: now };
     })();
   }
 
@@ -312,16 +332,23 @@ export class GameService {
 
       if (me.radar_snapshot && me.radar_at !== null && now - me.radar_at < RADAR_INTERVAL_MS) {
         const snapshot = JSON.parse(me.radar_snapshot) as RadarSnapshot;
-        return { ...snapshot, next_ping_at: me.radar_at + RADAR_INTERVAL_MS, server_now: now };
+        // Rebuild when samples expire even inside the short cache window.
+        const originAt = snapshot.origin_captured_at ?? snapshot.snapshot_at;
+        if (now - originAt <= FIX_MAX_AGE_MS && snapshot.points.every((p) =>
+          now - (p.captured_at ?? (snapshot.snapshot_at - p.fix_age_s * 1000)) <= FIX_MAX_AGE_MS)) {
+          return { ...snapshot, next_ping_at: me.radar_at + RADAR_INTERVAL_MS, server_now: now };
+        }
       }
 
       const others = this.db
         .prepare(`SELECT * FROM players WHERE game_id = ? AND id != ?`)
         .all(game.id, me.id) as PlayerRow[];
 
-      if (me.latitude === null || me.longitude === null || me.location_at === null || !isFresh(me, now)) {
+      if (me.latitude === null || me.longitude === null || me.location_at === null || !hasRecentLocation(me, now)) {
         return {
           origin_available: false,
+          origin_captured_at: me.captured_at,
+          origin_accuracy_m: me.accuracy_m,
           snapshot_at: null,
           next_ping_at: null,
           server_now: now,
@@ -337,6 +364,7 @@ export class GameService {
           longitude: me.longitude,
           accuracy_m: me.accuracy_m,
           location_at: me.location_at,
+          captured_at: me.captured_at,
         },
         others,
         now,
@@ -393,7 +421,7 @@ export class GameService {
       this.db
         .prepare(
           `UPDATE players
-           SET latitude = NULL, longitude = NULL, accuracy_m = NULL, location_at = NULL,
+           SET latitude = NULL, longitude = NULL, accuracy_m = NULL, location_at = NULL, captured_at = NULL,
                radar_snapshot = NULL, radar_at = NULL
            WHERE location_at < ?`,
         )
@@ -435,7 +463,7 @@ export class GameService {
     this.db
       .prepare(
         `UPDATE players
-         SET latitude = NULL, longitude = NULL, accuracy_m = NULL, location_at = NULL,
+         SET latitude = NULL, longitude = NULL, accuracy_m = NULL, location_at = NULL, captured_at = NULL,
              radar_snapshot = NULL, radar_at = NULL
          WHERE game_id = ?`,
       )

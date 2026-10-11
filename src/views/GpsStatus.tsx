@@ -9,7 +9,17 @@ interface GpsStatusProps {
 export function GpsStatus({ status, onEnable, onResetGps }: GpsStatusProps) {
   switch (status) {
     case 'active':
-      return <p className="gps ok">GPS on</p>;
+      return <p className="gps ok">Location shared</p>;
+    case 'sharing':
+      return <p className="gps">Sharing location…</p>;
+    case 'poor':
+      return <p className="gps notice">Poor accuracy. Try moving into an open area.</p>;
+    case 'aging':
+      return <p className="gps notice">Location aging. Finding a fresh reading…</p>;
+    case 'connection_lost':
+      return <p className="gps notice">Connection lost. Retrying location sharing…</p>;
+    case 'paused':
+      return <p className="gps notice">Location paused. Keep the game open to share.</p>;
     case 'requesting':
       return <p className="gps">Finding your location…</p>;
     case 'denied':

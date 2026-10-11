@@ -39,8 +39,8 @@ export function App() {
   const inviteHandled = useRef(false);
 
   const sharing = view === 'lobby' || view === 'game';
-  const gps = useGeolocation(sharing, visible);
-  const radar = useRadar(view === 'game', visible, serverNow, gps.fix !== null);
+  const gps = useGeolocation(sharing, visible, serverNow);
+  const { radar, reconnecting: radarReconnecting } = useRadar(view === 'game', visible, serverNow, gps.sharedAt !== null);
   const nowMs = useNow(serverNow);
 
   const showToast = useCallback((message: string) => {
@@ -113,6 +113,7 @@ export function App() {
         <Game
           state={state}
           radar={radar}
+          radarReconnecting={radarReconnecting}
           nowMs={nowMs}
           gpsStatus={gps.status}
           busy={busy}

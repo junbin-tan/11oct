@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS players (
   longitude REAL CHECK (longitude BETWEEN -180 AND 180),
   accuracy_m REAL CHECK (accuracy_m >= 0),
   location_at INTEGER,
+  captured_at INTEGER,
   radar_snapshot TEXT,
   radar_at INTEGER,
   UNIQUE (game_id, tag_code)

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, viewFor } from '../src/App';
 import { PlayerQr } from '../src/components/PlayerQr';
-import { radarPosition } from '../src/components/Radar';
+import { Radar, radarPosition } from '../src/components/Radar';
 import { useGeolocation } from '../src/hooks/useGeolocation';
 import { useGame } from '../src/hooks/useGame';
 import { useRadar } from '../src/hooks/useRadar';
@@ -249,6 +249,8 @@ describe('session recovery', () => {
 describe('useRadar lifecycle', () => {
   const waiting: RadarResponse = {
     origin_available: false,
+    origin_captured_at: null,
+    origin_accuracy_m: null,
     snapshot_at: null,
     next_ping_at: null,
     server_now: 1_000,
@@ -292,96 +294,181 @@ describe('useRadar lifecycle', () => {
   });
 });
 
-describe('useGeolocation cleanup', () => {
-  afterEach(() => {
-    cleanup();
-    vi.useRealTimers();
-    apiMock.updateLocation.mockReset();
+describe('foreground location delivery', () => {
+  let reports: PositionCallback[];
+  let errors: PositionErrorCallback[];
+  let acquire: ReturnType<typeof vi.fn>;
+  let clearWatch: ReturnType<typeof vi.fn>;
+  const sample = (lat = 1.3, timestamp = Date.now(), accuracy = 5) => ({
+    coords: { latitude: lat, longitude: 103.8, accuracy }, timestamp,
+  }) as GeolocationPosition;
+  const ack = (accepted = true, reason = 'accepted', next = Date.now() + 5_000) => ({
+    accepted, reason, server_now: Date.now(), next_upload_at: next,
   });
-
-  function GpsProbe({ sharing }: { sharing: boolean }) {
-    const gps = useGeolocation(sharing, true);
-    return (
-      <>
-        <span data-testid="gps-state">{`${gps.status}:${gps.fix ? 'fixed' : 'empty'}`}</span>
-        <button onClick={gps.enable}>Enable</button>
-        <button onClick={gps.reset}>Reset</button>
-      </>
-    );
+  function Probe({ sharing = true, visible = true, offset = 0 }: { sharing?: boolean; visible?: boolean; offset?: number }) {
+    const gps = useGeolocation(sharing, visible, () => Date.now() + offset);
+    return <>
+      <span data-testid="gps-state">{`${gps.status}:${gps.fix ? 'fixed' : 'empty'}`}</span>
+      <button onClick={gps.enable}>Enable</button><button onClick={gps.reset}>Reset</button>
+    </>;
   }
-
-  it('ignores a position callback that arrives after tracking stops', async () => {
-    let report: PositionCallback = () => {};
-    Object.defineProperty(navigator, 'geolocation', {
-      configurable: true,
-      value: {
-        getCurrentPosition: (success: PositionCallback) => {
-          report = success;
-        },
-      },
-    });
-    Object.defineProperty(navigator, 'permissions', {
-      configurable: true,
-      value: { query: vi.fn().mockResolvedValue({ state: 'prompt' }) },
-    });
-
-    const view = render(<GpsProbe sharing />);
+  const status = () => screen.getByTestId('gps-state').textContent;
+  const advance = async (ms: number) => { await act(async () => vi.advanceTimersByTimeAsync(ms)); };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-11T00:00:00Z'));
+    reports = []; errors = []; acquire = vi.fn(); clearWatch = vi.fn();
+    apiMock.updateLocation.mockReset().mockImplementation(() => Promise.resolve(ack()));
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+      watchPosition: (success: PositionCallback, error: PositionErrorCallback, options: PositionOptions) => {
+        expect(options).toMatchObject({ maximumAge: 0, enableHighAccuracy: true });
+        reports.push(success); errors.push(error); return reports.length;
+      }, getCurrentPosition: acquire, clearWatch,
+    } });
+    Object.defineProperty(navigator, 'permissions', { configurable: true,
+      value: { query: vi.fn().mockResolvedValue({ state: 'prompt' }) } });
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); apiMock.updateLocation.mockReset(); });
+  const start = (props = {}) => {
+    const view = render(<Probe {...props} />);
     fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
-    view.rerender(<GpsProbe sharing={false} />);
-    report({
-      coords: { latitude: 1.3, longitude: 103.8, accuracy: 5 },
-    } as GeolocationPosition);
-    expect(apiMock.updateLocation).not.toHaveBeenCalled();
+    return view;
+  };
+
+  it('preserves capture age and normalizes device clock before upload', async () => {
+    start({ offset: 90_000 });
+    const timestamp = Date.now() - 4_000;
+    await act(async () => reports[0]!(sample(1.3, timestamp)));
+    expect(apiMock.updateLocation).toHaveBeenCalledWith(1.3, 103.8, 5, timestamp + 90_000, expect.any(AbortSignal));
+    expect(status()).toBe('active:fixed');
   });
 
-  it('clears the local fix, ignores the old request, and forces one fresh request', async () => {
-    vi.useFakeTimers();
-    apiMock.updateLocation.mockResolvedValue({});
-    const reports: PositionCallback[] = [];
-    const options: PositionOptions[] = [];
-    Object.defineProperty(navigator, 'geolocation', {
-      configurable: true,
-      value: {
-        getCurrentPosition: (
-          success: PositionCallback,
-          _error: PositionErrorCallback,
-          positionOptions: PositionOptions,
-        ) => {
-          reports.push(success);
-          options.push(positionOptions);
-        },
-      },
-    });
-    Object.defineProperty(navigator, 'permissions', {
-      configurable: true,
-      value: { query: vi.fn().mockResolvedValue({ state: 'prompt' }) },
-    });
+  it('waits for acknowledgement before reporting shared', async () => {
+    let resolve!: (value: ReturnType<typeof ack>) => void;
+    apiMock.updateLocation.mockImplementation(() => new Promise((r) => { resolve = r; }));
+    start();
+    await act(async () => reports[0]!(sample()));
+    expect(status()).toBe('sharing:fixed');
+    await act(async () => resolve(ack()));
+    expect(status()).toBe('active:fixed');
+  });
 
-    render(<GpsProbe sharing />);
-    fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
-    expect(options[0]?.maximumAge).toBe(5_000);
-
-    const position = {
-      coords: { latitude: 1.3, longitude: 103.8, accuracy: 5 },
-    } as GeolocationPosition;
-    await act(async () => reports[0]!(position));
-    expect(screen.getByTestId('gps-state').textContent).toBe('active:fixed');
+  it('serializes slow uploads and keeps only the latest pending sample', async () => {
+    let resolve!: (value: ReturnType<typeof ack>) => void;
+    apiMock.updateLocation.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    start();
+    await act(async () => reports[0]!(sample()));
+    await advance(6_000);
+    await act(async () => reports[0]!(sample(1.31)));
+    await advance(1_000);
+    await act(async () => reports[0]!(sample(1.32)));
     expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
-    expect(screen.getByTestId('gps-state').textContent).toBe('requesting:empty');
-    expect(options[1]?.maximumAge).toBe(0);
-
-    await act(async () => reports[0]!(position));
-    expect(screen.getByTestId('gps-state').textContent).toBe('requesting:empty');
-    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
-
-    await act(async () => reports[1]!(position));
-    expect(screen.getByTestId('gps-state').textContent).toBe('active:fixed');
+    await act(async () => resolve(ack(true, 'accepted', Date.now())));
+    await advance(1_000);
     expect(apiMock.updateLocation).toHaveBeenCalledTimes(2);
+    expect(apiMock.updateLocation.mock.calls[1]![0]).toBe(1.32);
+  });
 
-    await act(async () => vi.advanceTimersByTimeAsync(10_000));
-    expect(options[2]?.maximumAge).toBe(5_000);
+  it('throttles fast sensor callbacks to five seconds and ignores duplicates', async () => {
+    start(); const first = sample();
+    await act(async () => reports[0]!(first));
+    await advance(1_000);
+    await act(async () => reports[0]!(sample(1.31)));
+    await advance(3_000);
+    await act(async () => reports[0]!(first));
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+    await advance(1_000);
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(2);
+    expect(apiMock.updateLocation.mock.calls[1]![0]).toBe(1.31);
+  });
+
+  it('honors the server throttle acknowledgement', async () => {
+    apiMock.updateLocation.mockImplementationOnce(() => Promise.resolve(ack(false, 'throttled', Date.now() + 8_000)));
+    start(); await act(async () => reports[0]!(sample()));
+    expect(status()).toBe('sharing:fixed');
+    await advance(7_000); expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+    await advance(1_000); expect(apiMock.updateLocation).toHaveBeenCalledTimes(2);
+    expect(status()).toBe('active:fixed');
+  });
+
+  it.each(['older', 'expired', 'future'])('does not report a %s rejection as shared', async (reason) => {
+    apiMock.updateLocation.mockImplementationOnce(() => Promise.resolve(ack(false, reason)));
+    start(); await act(async () => reports[0]!(sample()));
+    expect(status()).toBe('unavailable:fixed');
+    await advance(10_000); expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an upload outage and retries the newest reading', async () => {
+    apiMock.updateLocation.mockRejectedValueOnce(new Error('offline'));
+    start(); await act(async () => reports[0]!(sample()));
+    expect(status()).toBe('connection_lost:fixed');
+    await advance(2_000); await act(async () => reports[0]!(sample(1.31)));
+    await advance(3_000);
+    expect(apiMock.updateLocation.mock.calls[1]![0]).toBe(1.31);
+    expect(status()).toBe('active:fixed');
+  });
+
+  it('ages stationary readings and requests a fresh acquisition only once while pending', async () => {
+    start(); const first = sample();
+    await act(async () => reports[0]!(first));
+    await advance(16_000);
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(acquire.mock.calls[0]![2]).toMatchObject({ maximumAge: 0 });
+    expect(status()).toBe('aging:fixed');
+    await advance(15_000);
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(status()).toBe('unavailable:fixed');
+    await act(async () => acquire.mock.calls[0]![0](first));
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts uploads on hide, ignores late callbacks, and starts a fresh watch on return', async () => {
+    apiMock.updateLocation.mockImplementationOnce(() => new Promise(() => {}));
+    const view = start();
+    await act(async () => reports[0]!(sample()));
+    const signal = apiMock.updateLocation.mock.calls[0]![4] as AbortSignal;
+    view.rerender(<Probe visible={false} />);
+    expect(signal.aborted).toBe(true); expect(clearWatch).toHaveBeenCalledWith(1);
+    expect(status()).toBe('paused:empty');
+    await advance(6_000); await act(async () => reports[0]!(sample()));
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+    view.rerender(<Probe visible />);
+    expect(reports).toHaveLength(2);
+    await act(async () => reports[1]!(sample()));
+    expect(status()).toBe('active:fixed');
+  });
+
+  it('clears the fix on reset and rejects callbacks from the old watch', async () => {
+    start(); await act(async () => reports[0]!(sample()));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(status()).toBe('requesting:empty');
+    expect(clearWatch).toHaveBeenCalledWith(1);
+    await advance(5_000); await act(async () => reports[0]!(sample()));
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+    await act(async () => reports[1]!(sample()));
+    expect(status()).toBe('active:fixed');
+  });
+
+  it('stops on game end and ignores late sensor callbacks', async () => {
+    const view = start(); view.rerender(<Probe sharing={false} />);
+    await act(async () => reports[0]!(sample()));
+    expect(clearWatch).toHaveBeenCalledWith(1);
+    expect(apiMock.updateLocation).not.toHaveBeenCalled();
+    expect(status()).toBe('off:empty');
+  });
+
+  it('stops sharing when sensor permission is denied', async () => {
+    start();
+    await act(async () => errors[0]!({ code: 1 } as GeolocationPositionError));
+    expect(status()).toBe('denied:empty');
+    await act(async () => reports[0]!(sample()));
+    await advance(30_000);
+    expect(apiMock.updateLocation).not.toHaveBeenCalled(); expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it('reports poor accuracy even after a successful upload', async () => {
+    start(); await act(async () => reports[0]!(sample(1.3, Date.now(), 120)));
+    expect(status()).toBe('poor:fixed');
   });
 });
 
@@ -403,5 +490,71 @@ describe('GpsStatus recovery actions', () => {
       view.rerender(<GpsStatus status={status} onEnable={onEnable} onResetGps={onResetGps} />);
       expect(screen.queryByRole('button', { name: 'Clear GPS cache' })).toBeNull();
     }
+  });
+});
+
+describe('radar freshness and uncertainty display', () => {
+  afterEach(cleanup);
+  const at = 1_000_000;
+  const player = { id: 'p2', name: 'Bob', role: 'runner' as const, is_host: false, gps_ready: true, tag_count: 0, caught_at: null };
+  const snapshot = (): RadarResponse => ({
+    origin_available: true, origin_captured_at: at, origin_accuracy_m: 15,
+    snapshot_at: at, next_ping_at: at + 5000, server_now: at, missing_gps_count: 0, outside_range_count: 0,
+    points: [{ player_id: 'p2', distance_m: 150, bearing_deg: 90, accuracy_m: 5,
+      captured_at: at, fix_age_s: 0, uncertainty_m: 20, position_uncertain: false }],
+  });
+  it('shows combined uncertainty and ages the reading during a network outage', () => {
+    const radar = snapshot();
+    const view = render(<Radar radar={radar} players={[player]} nowMs={at} />);
+    expect(screen.getByText(/≈ 150 m \(±20 m\)/)).toBeTruthy();
+    expect(view.container.querySelector('.radar-uncertainty')).not.toBeNull();
+    view.rerender(<Radar radar={radar} players={[player]} nowMs={at + 16_000} reconnecting />);
+    expect(screen.getByText(/16s old · aging/)).toBeTruthy();
+    expect(screen.getByText('Connection lost. Retrying radar…')).toBeTruthy();
+    expect(view.container.querySelector('.radar-aging')).not.toBeNull();
+    view.rerender(<Radar radar={radar} players={[player]} nowMs={at + 30_001} reconnecting />);
+    expect(view.container.querySelector('.radar-dot')).toBeNull();
+    expect(screen.getByText(/Location expired/)).toBeTruthy();
+    expect(screen.queryByText(/≈ 150 m/)).toBeNull();
+  });
+  it('hides directions when only the origin has expired', () => {
+    const radar = snapshot(); radar.points[0]!.captured_at = at + 25_000;
+    const view = render(<Radar radar={radar} players={[player]} nowMs={at + 31_000} />);
+    expect(view.container.querySelector('.radar-dot')).toBeNull();
+    expect(screen.getByText(/Your location expired/)).toBeTruthy();
+  });
+  it.each(['overlap', 'unknown accuracy', 'unknown capture age', 'unknown origin age'])(
+    'does not plot %s as a precise position', (scenario) => {
+      const radar = snapshot();
+      if (scenario === 'overlap') radar.points[0]!.position_uncertain = true;
+      if (scenario === 'unknown accuracy') radar.points[0]!.uncertainty_m = null;
+      if (scenario === 'unknown capture age') radar.points[0]!.captured_at = null;
+      if (scenario === 'unknown origin age') radar.origin_captured_at = null;
+      const view = render(<Radar radar={radar} players={[player]} nowMs={at} />);
+      expect(view.container.querySelector('.radar-dot')).toBeNull();
+      expect(screen.getByText(/Position uncertain/)).toBeTruthy();
+      expect(screen.queryByText(/≈ 150 m/)).toBeNull();
+    },
+  );
+});
+
+describe('radar refresh recovery', () => {
+  afterEach(() => { cleanup(); vi.useRealTimers(); apiMock.getRadar.mockReset(); });
+  function Probe() {
+    const { radar, reconnecting } = useRadar(true, true, Date.now, false);
+    return <span>{`${radar?.snapshot_at ?? 'none'}:${reconnecting ? 'retrying' : 'ready'}`}</span>;
+  }
+  it('refreshes on the five-second deadline and exposes errors while retaining the last snapshot', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1_000_000);
+    apiMock.getRadar.mockResolvedValueOnce({ snapshot_at: Date.now(), next_ping_at: Date.now() + 5_000, origin_available: true });
+    apiMock.getRadar.mockRejectedValueOnce(new Error('offline'));
+    apiMock.getRadar.mockResolvedValue({ snapshot_at: 1_015_250, next_ping_at: 1_020_250, origin_available: true });
+    render(<Probe />);
+    await act(async () => {});
+    expect(screen.getByText('1000000:ready')).toBeTruthy();
+    await act(async () => vi.advanceTimersByTimeAsync(5_250));
+    expect(screen.getByText('1000000:retrying')).toBeTruthy();
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(screen.getByText('1015250:ready')).toBeTruthy();
   });
 });

@@ -1,4 +1,4 @@
-import type { GameState, RadarResponse, TagResult } from './types';
+import type { GameState, LocationAck, RadarResponse, TagResult } from './types';
 
 const MESSAGES: Record<string, string> = {
   ROOM_NOT_FOUND: 'No game with that code.',
@@ -24,27 +24,39 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  let response: Response;
+export const API_REQUEST_TIMEOUT_MS = 10_000;
+
+async function request<T>(method: string, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const cancel = () => controller.abort();
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, API_REQUEST_TIMEOUT_MS);
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       method,
       credentials: 'same-origin',
       headers: method === 'GET' ? undefined : { 'content-type': 'application/json' },
       body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+      signal: controller.signal,
     });
-  } catch {
+    const data = await response.json() as T & { error?: string; message?: string };
+    if (!response.ok) {
+      const code = data?.error ?? 'SERVER_ERROR';
+      throw new ApiError(code, data?.message ?? MESSAGES[code] ?? 'Something went wrong.', response.status);
+    }
+    if (!data) throw new ApiError('SERVER_ERROR', 'Empty response. Retrying…', response.status);
+    return data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (timedOut) throw new ApiError('TIMEOUT', 'Connection timed out. Retrying…', 0);
+    if (signal?.aborted) throw new ApiError('CANCELLED', 'Request cancelled.', 0);
     throw new ApiError('NETWORK', 'Connection lost. Retrying…', 0);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
   }
-
-  const data = (await response.json().catch(() => null)) as
-    | (T & { error?: string; message?: string })
-    | null;
-  if (!response.ok) {
-    const code = data?.error ?? 'SERVER_ERROR';
-    throw new ApiError(code, data?.message ?? MESSAGES[code] ?? 'Something went wrong.', response.status);
-  }
-  return data as T;
 }
 
 type StateResponse = { state: GameState };
@@ -55,9 +67,9 @@ export const api = {
   joinGame: (code: string, name: string) => request<StateResponse>('POST', '/api/games/join', { code, name }),
   startGame: () => request<StateResponse>('POST', '/api/game/start'),
   endGame: () => request<StateResponse>('POST', '/api/game/end'),
-  updateLocation: (lat: number, lng: number, accuracy: number | null) =>
-    request<{ accepted: boolean }>('PUT', '/api/game/location', { lat, lng, accuracy }),
-  getRadar: () => request<RadarResponse>('GET', '/api/game/radar'),
+  updateLocation: (lat: number, lng: number, accuracy: number | null, capturedAt: number, signal?: AbortSignal) =>
+    request<LocationAck>('PUT', '/api/game/location', { lat, lng, accuracy, captured_at: capturedAt }, signal),
+  getRadar: (signal?: AbortSignal) => request<RadarResponse>('GET', '/api/game/radar', undefined, signal),
   tag: (input: { payload: string } | { code: string }) =>
     request<StateResponse & { result: TagResult }>('POST', '/api/game/tag', input),
 };

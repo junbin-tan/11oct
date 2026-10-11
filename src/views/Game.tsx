@@ -12,6 +12,7 @@ const QrScanner = lazy(() => import('../components/QrScanner').then((m) => ({ de
 interface GameProps {
   state: GameState;
   radar: RadarResponse | null;
+  radarReconnecting: boolean;
   nowMs: number;
   gpsStatus: Status;
   busy: boolean;
@@ -21,7 +22,7 @@ interface GameProps {
   onEnd: () => void;
 }
 
-export function Game({ state, radar, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd }: GameProps) {
+export function Game({ state, radar, radarReconnecting, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd }: GameProps) {
   const [modal, setModal] = useState<'qr' | 'scan' | null>(null);
   const { me, game, players, events } = state;
   const isCatcher = me.role === 'catcher';
@@ -48,11 +49,9 @@ export function Game({ state, radar, nowMs, gpsStatus, busy, onEnableGps, onRese
         <span>{formatDuration(nowMs - (game.started_at ?? nowMs))}</span>
       </div>
 
-      {gpsStatus !== 'active' && (
-        <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />
-      )}
+      <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />
 
-      <Radar radar={radar} players={players} nowMs={nowMs} />
+      <Radar radar={radar} players={players} nowMs={nowMs} reconnecting={radarReconnecting} />
 
       <button className="btn primary primary-action" onClick={() => setModal(isCatcher ? 'scan' : 'qr')}>
         {isCatcher ? 'Scan to tag' : 'Show my QR'}

@@ -902,3 +902,14 @@ dialog.modal::backdrop {
     transition-duration: 0.01ms !important;
   }
 }
+.radar-uncertainty {
+  fill: rgba(var(--accent-rgb), 0.12);
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.radar-aging {
+  opacity: 0.55;
+}
+

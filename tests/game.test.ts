@@ -43,8 +43,8 @@ class Client {
     return this.call('GET', '/api/game').then((r) => r.body.state);
   }
 
-  location(lat: number, lng: number, accuracy = 10) {
-    return this.call('PUT', '/api/game/location', { lat, lng, accuracy });
+  location(lat: number, lng: number, accuracy: number | null = 10, captured_at: number | null = clock) {
+    return this.call('PUT', '/api/game/location', { lat, lng, accuracy, captured_at });
   }
 }
 
@@ -199,35 +199,35 @@ describe('location and radar', () => {
     await others[0]!.location(1.301, 103.8);
     const radar = (await host.call('GET', '/api/game/radar')).body;
     expect(radar.origin_available).toBe(true);
-    expect(radar.next_ping_at).toBe(clock + 60_000);
+    expect(radar.next_ping_at).toBe(clock + 5_000);
     expect(radar.points).toHaveLength(1);
     expect(radar.points[0].distance_m).toBeGreaterThan(105);
     expect(radar.points[0].distance_m).toBeLessThan(115);
     expect(radar.points[0].bearing_deg).toBe(0);
   });
 
-  it('freezes the snapshot for 60 seconds even when players move or refresh', async () => {
+  it('caches for five seconds, then publishes moved players', async () => {
     const { host, others } = await createRoom(['Alice', 'Bob'], true);
     const bob = others[0]!;
     await host.location(1.3, 103.8);
     await bob.location(1.301, 103.8);
     const first = (await host.call('GET', '/api/game/radar')).body;
 
-    clock += 30_000;
-    await bob.location(1.3, 103.801);
+    clock += 2_000;
     const cached = (await host.call('GET', '/api/game/radar')).body;
     expect(cached.points).toEqual(first.points);
     expect(cached.snapshot_at).toBe(first.snapshot_at);
     expect(cached.next_ping_at).toBe(first.next_ping_at);
 
-    clock += 30_000;
+    clock += 3_000;
+    await bob.location(1.3, 103.801);
     await host.location(1.3, 103.8);
     const next = (await host.call('GET', '/api/game/radar')).body;
     expect(next.snapshot_at).toBe(clock);
     expect(next.points[0].bearing_deg).toBe(90);
   });
 
-  it('counts players outside 500 m and drops fixes older than 120 seconds', async () => {
+  it('counts players outside 500 m and drops fixes older than 30 seconds', async () => {
     const { host, others } = await createRoom(['Alice', 'Bob', 'Cat'], true);
     const [bob, cat] = others as [Client, Client];
     await bob.location(1.3, 103.8);
@@ -239,6 +239,84 @@ describe('location and radar', () => {
     expect(radar.points).toHaveLength(0);
     expect(radar.outside_range_count).toBe(1);
     expect(radar.missing_gps_count).toBe(1);
+  });
+
+  it('stores capture time separately and throttles by receipt time', async () => {
+    const { host } = await createRoom(['Alice', 'Bob'], true);
+    const first = (await host.location(1.3, 103.8, 10, clock - 20_000)).body;
+    expect(first).toMatchObject({ accepted: true, reason: 'accepted', next_upload_at: clock + 5_000, server_now: clock });
+    const row = db.prepare('SELECT captured_at, location_at FROM players WHERE captured_at IS NOT NULL').get();
+    expect(row).toEqual({ captured_at: clock - 20_000, location_at: clock });
+    clock += 1_000;
+    expect((await host.location(1.3, 103.8)).body).toMatchObject({ accepted: false, reason: 'throttled', next_upload_at: clock + 4_000 });
+  });
+
+  it('rejects duplicates, older, expired, invalid and materially future samples', async () => {
+    const { host } = await createRoom(['Alice', 'Bob'], true);
+    const captured = clock;
+    await host.location(1.3, 103.8);
+    clock += 6_000;
+    expect((await host.location(1.4, 103.8, 10, captured)).body.reason).toBe('older');
+    expect((await host.location(1.4, 103.8, 10, captured - 1)).body.reason).toBe('older');
+    expect((await host.location(1.4, 103.8, 10, clock - 30_001)).body.reason).toBe('expired');
+    expect((await host.location(1.4, 103.8, 10, clock + 5_001)).body.reason).toBe('future');
+    expect((await host.call('PUT', '/api/game/location', { lat: 1, lng: 2, captured_at: 'yesterday' })).status).toBe(400);
+    expect(db.prepare('SELECT latitude FROM players WHERE captured_at IS NOT NULL').get()).toEqual({ latitude: 1.3 });
+    expect((await host.location(1.31, 103.8, 10, clock + 2_000)).body.accepted).toBe(true);
+    expect(db.prepare('SELECT captured_at FROM players WHERE captured_at IS NOT NULL').get()).toEqual({ captured_at: clock });
+  });
+
+  it('includes both accuracies and the actual capture ages', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    await host.location(1.3, 103.8, 60, clock - 8_000);
+    await others[0]!.location(1.301, 103.8, 5, clock - 3_000);
+    const radar = (await host.call('GET', '/api/game/radar')).body;
+    expect(radar).toMatchObject({ origin_captured_at: clock - 8_000, origin_accuracy_m: 60 });
+    expect(radar.points[0]).toMatchObject({ uncertainty_m: 65, captured_at: clock - 3_000, fix_age_s: 3, position_uncertain: false });
+  });
+
+  it('marks overlapping, unknown-accuracy and boundary positions uncertain', async () => {
+    const { host, others } = await createRoom(['Alice', 'Overlap', 'Unknown', 'Boundary'], true);
+    await host.location(0, 0, 50);
+    await others[0]!.location(0.0001, 0, 10);
+    await others[1]!.location(0.001, 0, null);
+    await others[2]!.location(0.0047, 0, 10); // ~523 m, but the 60 m uncertainty overlaps 500 m.
+    const radar = (await host.call('GET', '/api/game/radar')).body;
+    expect(radar.points).toHaveLength(3);
+    expect(radar.outside_range_count).toBe(0);
+    expect(radar.points.every((p: { position_uncertain: boolean }) => p.position_uncertain)).toBe(true);
+    expect(radar.points[1].uncertainty_m).toBeNull();
+  });
+
+  it('accepts legacy clients but marks their capture age unknown', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    await host.location(1.3, 103.8);
+    const legacy = await others[0]!.call('PUT', '/api/game/location', { lat: 1.301, lng: 103.8, accuracy: 5 });
+    expect(legacy.body.accepted).toBe(true);
+    const radar = (await host.call('GET', '/api/game/radar')).body;
+    expect(radar.points[0]).toMatchObject({ captured_at: null, position_uncertain: true });
+    const reversed = (await others[0]!.call('GET', '/api/game/radar')).body;
+    expect(reversed.origin_captured_at).toBeNull();
+    expect(reversed.points[0].position_uncertain).toBe(true);
+  });
+
+  it('expires a cached target even within the five-second cache interval', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    await host.location(1.3, 103.8);
+    await others[0]!.location(1.301, 103.8, 10, clock - 29_000);
+    expect((await host.call('GET', '/api/game/radar')).body.points).toHaveLength(1);
+    clock += 2_000;
+    const radar = (await host.call('GET', '/api/game/radar')).body;
+    expect(radar.points).toHaveLength(0); expect(radar.missing_gps_count).toBe(1);
+  });
+
+  it('expires a cached origin even with fresh targets', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    await host.location(1.3, 103.8, 10, clock - 29_000);
+    await others[0]!.location(1.301, 103.8);
+    expect((await host.call('GET', '/api/game/radar')).body.points).toHaveLength(1);
+    clock += 2_000;
+    expect((await host.call('GET', '/api/game/radar')).body).toMatchObject({ origin_available: false, points: [] });
   });
 
   it('rejects a late location upload after the game ends', async () => {
@@ -325,7 +403,7 @@ describe('tagging', () => {
     expect((await others[0]!.state()).game.status).toBe('ended');
 
     const leftovers = db
-      .prepare(`SELECT COUNT(*) AS n FROM players WHERE latitude IS NOT NULL OR radar_snapshot IS NOT NULL`)
+      .prepare(`SELECT COUNT(*) AS n FROM players WHERE latitude IS NOT NULL OR captured_at IS NOT NULL OR location_at IS NOT NULL OR radar_snapshot IS NOT NULL`)
       .get() as { n: number };
     expect(leftovers.n).toBe(0);
     expect((await host.call('POST', '/api/game/tag', { code: bob.me.tag_code })).body.error).toBe('GAME_NOT_ACTIVE');

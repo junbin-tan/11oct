@@ -26,20 +26,22 @@ export function useGame() {
   const appliedSeq = useRef(0);
   const polling = useRef(false);
 
-  const apply = useCallback((seq: number, next: GameState | null) => {
+  const apply = useCallback((seq: number, next: GameState | null, sentAt: number) => {
     if (seq < appliedSeq.current) return;
     appliedSeq.current = seq;
     setState(next);
-    if (next) setClockOffset(next.server_now - Date.now());
+    // Approximate the server clock at the request midpoint, not at response receipt.
+    if (next) setClockOffset(next.server_now - (sentAt + Date.now()) / 2);
   }, []);
 
   const refresh = useCallback(async () => {
     if (polling.current) return;
     polling.current = true;
     const seq = ++nextSeq.current;
+    const sentAt = Date.now();
     try {
       const { state: next } = await api.getState();
-      apply(seq, next);
+      apply(seq, next, sentAt);
       setReconnecting(false);
     } catch {
       setReconnecting(true);
@@ -54,11 +56,12 @@ export function useGame() {
       { quiet = false }: { quiet?: boolean } = {},
     ): Promise<{ data: T | null; error: string | null }> => {
       const seq = ++nextSeq.current;
+      const sentAt = Date.now();
       setBusy(true);
       setError(null);
       try {
         const response = await action();
-        apply(seq, response.state);
+        apply(seq, response.state, sentAt);
         setReconnecting(false);
         return { data: response, error: null };
       } catch (err) {

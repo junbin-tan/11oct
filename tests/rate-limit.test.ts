@@ -59,6 +59,39 @@ describe('rate limits', () => {
     }
   });
 
+  it('supports a 30-player round at five-second location/radar cadence for a full minute', async () => {
+    await app.close();
+    let clock = Date.now();
+    ({ app } = await buildApp({ db, config, now: () => clock, rateLimit: true }));
+    const host = await inject({ method: 'POST', url: '/api/games', headers: { 'content-type': 'application/json' }, payload: { name: 'Host' } });
+    const players = [cookieOf(host)];
+    const code = host.body.state.game.code;
+    for (let i = 1; i < 30; i++) {
+      const joined = await inject({ method: 'POST', url: '/api/games/join', headers: { 'content-type': 'application/json' }, payload: { code, name: `P${i}` } });
+      expect(joined.status).toBe(200); players.push(cookieOf(joined));
+    }
+    expect((await inject({ method: 'POST', url: '/api/game/start', headers: { cookie: players[0], 'content-type': 'application/json' }, payload: {} })).status).toBe(200);
+    for (let second = 0; second < 60; second++) {
+      // Simulate game time while keeping the entire workload inside the limiter's real window.
+      if (second % 5 === 0) {
+        for (const [i, cookie] of players.entries()) {
+          const location = await inject({ method: 'PUT', url: '/api/game/location', headers: { cookie, 'content-type': 'application/json' },
+            payload: { lat: 1.3 + i * 0.00001, lng: 103.8, accuracy: 5, captured_at: clock } });
+          expect(location.status).toBe(200); expect(location.body.accepted).toBe(true);
+        }
+        for (const cookie of players) {
+          const radar = await inject({ method: 'GET', url: '/api/game/radar', headers: { cookie } });
+          expect(radar.status).toBe(200); expect(radar.body.points).toHaveLength(29);
+          expect(radar.body.next_ping_at).toBe(clock + 5_000);
+        }
+      }
+      if (second % 3 === 0) {
+        for (const cookie of players) expect((await inject({ method: 'GET', url: '/api/game', headers: { cookie } })).status).toBe(200);
+      }
+      clock += 1_000;
+    }
+  });
+
   it('limits one signed player independently of the shared network', async () => {
     const created = await inject({
       method: 'POST',

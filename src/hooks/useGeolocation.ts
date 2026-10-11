@@ -1,114 +1,198 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
+import { browserLocationProvider, type LocationProvider, type LocationReading } from '../location/provider';
 
-export const GPS_INTERVAL_MS = 10_000;
+export const GPS_INTERVAL_MS = 5_000;
+const FRESH_MS = 15_000;
+const EXPIRES_MS = 30_000;
 
-export type GpsStatus = 'off' | 'requesting' | 'active' | 'denied' | 'unavailable' | 'unsupported';
+export type GpsStatus = 'off' | 'requesting' | 'sharing' | 'active' | 'aging' | 'poor' |
+  'connection_lost' | 'paused' | 'denied' | 'unavailable' | 'unsupported';
+export interface Fix { lat: number; lng: number; accuracy: number | null; at: number }
 
-export interface Fix {
-  lat: number;
-  lng: number;
-  accuracy: number | null;
-  at: number;
-}
-
-const POSITION_OPTIONS: PositionOptions = {
-  enableHighAccuracy: true,
-  maximumAge: 5_000,
-  timeout: 15_000,
-};
-
-/**
- * Acquires a fresh fix every 10 s and uploads it while `sharing` is true and the page is visible.
- * Tracking stops entirely when `sharing` turns false; callbacks that arrive afterwards are ignored.
- */
-export function useGeolocation(sharing: boolean, visible: boolean) {
-  const supported = typeof navigator !== 'undefined' && 'geolocation' in navigator;
+/** Foreground sensor feed with a serialized, latest-only delivery queue. */
+export function useGeolocation(
+  sharing: boolean,
+  visible: boolean,
+  serverNow: () => number = Date.now,
+  provider: LocationProvider = browserLocationProvider,
+) {
+  const supported = provider.supported();
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<GpsStatus>(supported ? 'off' : 'unsupported');
   const [fix, setFix] = useState<Fix | null>(null);
-  const [request, setRequest] = useState({ id: 0, forceFresh: false });
-  const inFlight = useRef(false);
+  const [sharedAt, setSharedAt] = useState<number | null>(null);
+  const [request, setRequest] = useState(0);
   const generation = useRef(0);
+  const nextAttempt = useRef(0);
+  const nowRef = useRef(serverNow);
+  nowRef.current = serverNow;
 
   const enable = useCallback(() => {
     if (!supported) return;
-    setEnabled(true);
-    setStatus('requesting');
-    setRequest((current) => ({ id: current.id + 1, forceFresh: false }));
-  }, [supported]);
-
-  const reset = useCallback(() => {
-    if (!supported) return;
     generation.current++;
-    inFlight.current = false;
-    setFix(null);
     setEnabled(true);
-    setStatus('requesting');
-    setRequest((current) => ({ id: current.id + 1, forceFresh: true }));
+    setRequest((n) => n + 1);
   }, [supported]);
+  const reset = enable;
 
   useEffect(() => {
     if (!supported || !navigator.permissions?.query) return;
     let cancelled = false;
-    navigator.permissions
-      .query({ name: 'geolocation' })
-      .then((permission) => {
-        if (!cancelled && permission.state === 'granted') enable();
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
+    let permission: PermissionStatus | undefined;
+    const changed = () => {
+      if (cancelled) return;
+      if (permission?.state === 'granted') enable();
+      if (permission?.state === 'denied') {
+        generation.current++;
+        setEnabled(false);
+        setStatus('denied');
+      }
     };
+    navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+      if (cancelled) return;
+      permission = result;
+      permission.addEventListener?.('change', changed);
+      changed();
+    }).catch(() => {});
+    return () => { cancelled = true; permission?.removeEventListener?.('change', changed); };
   }, [supported, enable]);
 
   useEffect(() => {
-    if (!supported || !enabled || !sharing || !visible) return;
+    setFix(null);
+    setSharedAt(null);
+    if (!supported || !enabled) return;
+    if (!sharing || !visible) { setStatus(sharing ? 'paused' : 'off'); return; }
     const gen = ++generation.current;
-    inFlight.current = false;
-    let firstRequest = true;
+    const controller = new AbortController();
+    const live = () => gen === generation.current && !controller.signal.aborted;
+    let stopWatch = () => {};
+    let latest: (Fix & { sensorAt: number }) | null = null;
+    let pending: Fix | null = null;
+    let inFlight = false;
+    let lastAck: Fix | null = null;
+    let sensorError: 'denied' | 'unavailable' | null = null;
+    let disconnected = false;
+    let acquireInFlight = false;
+    let lastAcquisition = Date.now();
+    setStatus('requesting');
 
-    const tick = () => {
-      if (inFlight.current) return;
-      inFlight.current = true;
-      const options = request.forceFresh && firstRequest
-        ? { ...POSITION_OPTIONS, maximumAge: 0 }
-        : POSITION_OPTIONS;
-      firstRequest = false;
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          if (gen !== generation.current) return;
-          inFlight.current = false;
-          const next: Fix = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
-            at: Date.now(),
-          };
-          setFix(next);
-          setStatus('active');
-          api.updateLocation(next.lat, next.lng, next.accuracy).catch(() => {});
-        },
-        (error) => {
-          if (gen !== generation.current) return;
-          inFlight.current = false;
-          setStatus(error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable');
-        },
-        options,
-      );
+    const showStatus = () => {
+      if (!live()) return;
+      const now = nowRef.current();
+      if (sensorError === 'denied') setStatus('denied');
+      else if (disconnected) setStatus('connection_lost');
+      else if (sensorError) setStatus(sensorError);
+      else if (!latest) setStatus(sensorError ?? 'requesting');
+      else if (now - latest.at > EXPIRES_MS) setStatus('unavailable');
+      else if (!lastAck) setStatus(sensorError ?? 'sharing');
+      else if (now - lastAck.at > EXPIRES_MS) setStatus('unavailable');
+      else if (latest.accuracy === null || latest.accuracy > 50) setStatus('poor');
+      else if (now - lastAck.at > FRESH_MS) setStatus('aging');
+      else setStatus('active');
     };
 
-    tick();
-    const timer = setInterval(tick, GPS_INTERVAL_MS);
+    const pump = async () => {
+      if (!live() || inFlight || !pending || Date.now() < nextAttempt.current || sensorError === 'denied') return;
+      const sample = pending;
+      pending = null;
+      if (nowRef.current() - sample.at > EXPIRES_MS) { showStatus(); return; }
+      inFlight = true;
+      nextAttempt.current = Date.now() + GPS_INTERVAL_MS;
+      try {
+        const ack = await api.updateLocation(sample.lat, sample.lng, sample.accuracy, sample.at, controller.signal);
+        if (!live()) return;
+        nextAttempt.current = Math.max(nextAttempt.current, Date.now() + Math.max(0, ack.next_upload_at - ack.server_now));
+        disconnected = false;
+        if (ack.accepted) {
+          lastAck = sample;
+          setSharedAt(sample.at);
+        } else if (ack.reason === 'throttled') {
+          pending ??= sample;
+        } else {
+          // A refused sample is not shared. Wait for a newer sensor sample.
+          sensorError = 'unavailable';
+        }
+      } catch (error) {
+        if (!live()) return;
+        if (error instanceof ApiError && (error.code === 'GAME_NOT_ACTIVE' || error.code === 'NOT_IN_ROOM')) {
+          stopWatch();
+          controller.abort();
+          setFix(null);
+          setSharedAt(null);
+          setStatus('off');
+          return;
+        }
+        disconnected = true;
+        pending ??= sample;
+      } finally {
+        inFlight = false;
+        showStatus();
+      }
+    };
+
+    const onReading = (reading: LocationReading) => {
+      if (!live() || sensorError === 'denied') return;
+      const age = Date.now() - reading.capturedAt;
+      if (!Number.isFinite(reading.capturedAt) || age > EXPIRES_MS || age < -5_000 ||
+        !Number.isFinite(reading.lat) || !Number.isFinite(reading.lng) ||
+        Math.abs(reading.lat) > 90 || Math.abs(reading.lng) > 180) {
+        sensorError = 'unavailable'; showStatus(); return;
+      }
+      if (latest && reading.capturedAt <= latest.sensorAt) return;
+      latest = {
+        lat: reading.lat, lng: reading.lng, accuracy: reading.accuracy,
+        at: Math.round(nowRef.current() - age), sensorAt: reading.capturedAt,
+      };
+      sensorError = null;
+      pending = latest;
+      setFix(latest);
+      showStatus();
+      void pump();
+    };
+    const onError = (reason: 'denied' | 'unavailable') => {
+      if (!live()) return;
+      sensorError = reason;
+      if (reason === 'denied') {
+        pending = null;
+        setFix(null);
+        setSharedAt(null);
+        stopWatch();
+        setStatus('denied');
+        controller.abort();
+        return;
+      }
+      showStatus();
+    };
+    try { stopWatch = provider.watch(onReading, onError); }
+    catch { onError('unavailable'); }
+    if (!live()) stopWatch();
+
+    const timer = setInterval(() => {
+      if (!live()) return;
+      showStatus();
+      void pump();
+      // A stationary watch need not emit. Ask for a fresh sample without re-dating the old one.
+      if ((!latest || Date.now() - latest.sensorAt >= FRESH_MS) &&
+        !acquireInFlight && Date.now() - lastAcquisition >= FRESH_MS) {
+        acquireInFlight = true;
+        lastAcquisition = Date.now();
+        try {
+          provider.acquire(
+            (reading) => { acquireInFlight = false; onReading(reading); },
+            (reason) => { acquireInFlight = false; onError(reason); },
+          );
+        } catch { acquireInFlight = false; onError('unavailable'); }
+      }
+    }, 1_000);
     return () => {
       generation.current++;
+      controller.abort();
+      stopWatch();
       clearInterval(timer);
+      pending = null;
     };
-  }, [supported, enabled, sharing, visible, request]);
+  }, [supported, enabled, sharing, visible, request, provider]);
 
-  useEffect(() => {
-    if (!sharing) setFix(null);
-  }, [sharing]);
-
-  return { status, fix, enable, reset, enabled };
+  return { status, fix, sharedAt, enable, reset, enabled };
 }
