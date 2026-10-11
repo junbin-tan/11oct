@@ -62,19 +62,19 @@ function expectRadius(map: L.Map, origin: MapPlayer) {
   expect(map.getCenter().lng).toBeCloseTo(origin.lng, 5);
   const edge = map.containerPointToLatLng([width, width / 2]);
   // Allow for Leaflet's projected-center pixel rounding at this close-up scale.
-  expect(Math.abs(L.latLng(origin.lat, origin.lng).distanceTo(edge) - 2)).toBeLessThan(0.03);
+  expect(Math.abs(L.latLng(origin.lat, origin.lng).distanceTo(edge) - 20)).toBeLessThan(0.3);
 }
 
-it('includes the 2 m boundary and excludes locations beyond it or without an origin', () => {
+it('includes the 20 m boundary and excludes locations beyond it or without an origin', () => {
   const origin = { ...me, lat: 0, lng: 0 };
   const atDistance = (distance: number) => ({ ...runner, lng: distance / 6_371_000 * 180 / Math.PI, lat: 0 });
-  expect(radarMapPoints([origin, atDistance(1.99)])).toHaveLength(2);
-  expect(radarMapPoints([origin, atDistance(2)])).toHaveLength(2);
-  expect(radarMapPoints([origin, atDistance(2.01)])).toHaveLength(1);
+  expect(radarMapPoints([origin, atDistance(19.99)])).toHaveLength(2);
+  expect(radarMapPoints([origin, atDistance(20)])).toHaveLength(2);
+  expect(radarMapPoints([origin, atDistance(20.01)])).toHaveLength(1);
   expect(radarMapPoints([runner])).toEqual([]);
 });
 
-it('keeps a north-up 2 m radius while following location changes and resizing', () => {
+it('keeps a north-up 20 m radius while following location changes and resizing', () => {
   const view = render(<MapCanvas points={[me, runner, { ...runner, player_id: 'far', lat: 1.4 }]} mode="radar" />);
   const map = maps[0]!;
   expectRadius(map, me);
@@ -141,8 +141,8 @@ it('preserves the same map through missing self, outages, and a newer GPS fix', 
   await act(async () => {});
   const element = view.container.querySelector('.street-map');
   const map = maps[0]!;
-  expect(screen.getByText('2 m')).toBeTruthy();
-  expect(screen.getByLabelText('North-up street map, 2 metre radius')).toBeTruthy();
+  expect(screen.getByText('20 m')).toBeTruthy();
+  expect(screen.getByLabelText('North-up street map, 20 metre radius')).toBeTruthy();
   api.getMap.mockResolvedValue(snapshot([]));
   await act(async () => vi.advanceTimersByTimeAsync(5000));
   view.rerender(<RadarMap {...props} nowMs={at + 30_001} />);

@@ -1,0 +1,50 @@
+{
+  "viewport": {
+    "width": 430,
+    "height": 932
+  },
+  "scale": 3,
+  "pixelSize": {
+    "width": 1290,
+    "height": 2796
+  },
+  "note": "Actual app rendered in Chrome. Local demo players and simulated GPS. No production game data.",
+  "shots": [
+    {
+      "name": "01-home-create",
+      "description": "Home screen — create a game"
+    },
+    {
+      "name": "02-home-join",
+      "description": "Home screen — join a game"
+    },
+    {
+      "name": "03-lobby",
+      "description": "Lobby with four demo players"
+    },
+    {
+      "name": "04-catcher-radar",
+      "description": "Catcher role with live nearby players"
+    },
+    {
+      "name": "05-runner-radar",
+      "description": "Runner role with live nearby players"
+    },
+    {
+      "name": "06-game-map",
+      "description": "Full-screen map with demo GPS positions in Singapore"
+    },
+    {
+      "name": "07-runner-qr",
+      "description": "Runner QR code and manual tag code"
+    },
+    {
+      "name": "08-first-catch",
+      "description": "Catcher dashboard after the first successful tag"
+    },
+    {
+      "name": "09-results",
+      "description": "Completed round and scoreboard"
+    }
+  ]
+}
