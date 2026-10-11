@@ -14,7 +14,7 @@ vi.mock('../src/api', () => ({ api }));
 const at = 1_000_000;
 const me: MapPlayer = { player_id: 'me', lat: 1.3, lng: 103.8, accuracy_m: 10, captured_at: at,
   name: 'Host', role: 'catcher', isMe: true, aging: false };
-const runner: MapPlayer = { ...me, player_id: 'runner', lat: 1.301, name: 'Runner', role: 'runner', isMe: false };
+const runner: MapPlayer = { ...me, player_id: 'runner', lat: 1.30001, name: 'Runner', role: 'runner', isMe: false };
 const state: GameState = {
   server_now: at,
   me: { player_id: 'me', name: 'Host', role: 'catcher', is_host: true, tag_code: 'ABCDEF', qr_payload: 'tag:ABCDEF:me:secret' },
@@ -61,23 +61,27 @@ function expectRadius(map: L.Map, origin: MapPlayer) {
   expect(map.getCenter().lat).toBeCloseTo(origin.lat, 5);
   expect(map.getCenter().lng).toBeCloseTo(origin.lng, 5);
   const edge = map.containerPointToLatLng([width, width / 2]);
-  // Leaflet rounds the projected center to a pixel (at most ~2 m at this size).
-  expect(Math.abs(L.latLng(origin.lat, origin.lng).distanceTo(edge) - 250)).toBeLessThan(3);
+  // Allow for Leaflet's projected-center pixel rounding at this close-up scale.
+  expect(Math.abs(L.latLng(origin.lat, origin.lng).distanceTo(edge) - 2)).toBeLessThan(0.03);
 }
 
-it('includes the 250 m boundary and excludes locations beyond it or without an origin', () => {
+it('includes the 2 m boundary and excludes locations beyond it or without an origin', () => {
   const origin = { ...me, lat: 0, lng: 0 };
   const atDistance = (distance: number) => ({ ...runner, lng: distance / 6_371_000 * 180 / Math.PI, lat: 0 });
-  expect(radarMapPoints([origin, atDistance(249.99)])).toHaveLength(2);
-  expect(radarMapPoints([origin, atDistance(250)])).toHaveLength(2);
-  expect(radarMapPoints([origin, atDistance(250.01)])).toHaveLength(1);
+  expect(radarMapPoints([origin, atDistance(1.99)])).toHaveLength(2);
+  expect(radarMapPoints([origin, atDistance(2)])).toHaveLength(2);
+  expect(radarMapPoints([origin, atDistance(2.01)])).toHaveLength(1);
   expect(radarMapPoints([runner])).toEqual([]);
 });
 
-it('keeps a north-up 250 m radius while following location changes and resizing', () => {
+it('keeps a north-up 2 m radius while following location changes and resizing', () => {
   const view = render(<MapCanvas points={[me, runner, { ...runner, player_id: 'far', lat: 1.4 }]} mode="radar" />);
   const map = maps[0]!;
   expectRadius(map, me);
+  expect(map.getZoom()).toBeGreaterThan(19);
+  const tileImages = view.container.querySelectorAll<HTMLImageElement>('img.leaflet-tile');
+  expect(tileImages.length).toBeGreaterThan(0);
+  for (const tile of tileImages) expect(tile.src).toMatch(/\/19\/\d+\/\d+\.png$/);
   expect(view.container.querySelectorAll('.map-player')).toHaveLength(2);
   expect(view.container.querySelector('.map-player.catcher.me')).toBeTruthy();
   expect(view.container.querySelector('.map-player.runner')).toBeTruthy();
@@ -94,7 +98,7 @@ it('keeps a north-up 250 m radius while following location changes and resizing'
   act(() => resizes[0]!());
   expectRadius(map, me);
   const moved = { ...me, lat: 1.3015, lng: 103.801 };
-  view.rerender(<MapCanvas points={[moved, runner]} mode="radar" />);
+  view.rerender(<MapCanvas points={[moved, { ...runner, lat: moved.lat + .00001, lng: moved.lng }]} mode="radar" />);
   expectRadius(map, moved);
   expect(view.container.querySelectorAll('.leaflet-overlay-pane path')).toHaveLength(2);
 });
@@ -137,8 +141,8 @@ it('preserves the same map through missing self, outages, and a newer GPS fix', 
   await act(async () => {});
   const element = view.container.querySelector('.street-map');
   const map = maps[0]!;
-  expect(screen.getByText('250 m')).toBeTruthy();
-  expect(screen.getByLabelText('North-up street map, 250 metre radius')).toBeTruthy();
+  expect(screen.getByText('2 m')).toBeTruthy();
+  expect(screen.getByLabelText('North-up street map, 2 metre radius')).toBeTruthy();
   api.getMap.mockResolvedValue(snapshot([]));
   await act(async () => vi.advanceTimersByTimeAsync(5000));
   view.rerender(<RadarMap {...props} nowMs={at + 30_001} />);
@@ -251,6 +255,8 @@ it('keeps the separate full map interactive and showing distant players', async 
   const dialog = screen.getByRole('dialog', { name: 'Game map' });
   await waitFor(() => expect(dialog.querySelectorAll('.map-player')).toHaveLength(2));
   expect(maps[1]!.dragging.enabled()).toBe(true);
+  expect(maps[1]!.getMaxZoom()).toBe(19);
+  expect(tiles[1]!.options.maxNativeZoom).toBeUndefined();
   expect(within(dialog).getByRole('button', { name: 'Show everyone' })).toBeTruthy();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Close map' }));
   expect(document.querySelectorAll('.radar-map .map-player')).toHaveLength(1);

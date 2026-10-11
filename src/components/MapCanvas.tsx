@@ -50,11 +50,13 @@ export function MapCanvas({ points: allPoints, mode = 'full' }: { points: MapPla
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: false, minZoom: 1, maxZoom: 19,
+    const map = L.map(containerRef.current, { zoomControl: false, minZoom: 1, maxZoom: compact ? 28 : 19,
       ...(compact ? { zoomSnap: 0, dragging: false, touchZoom: false, doubleClickZoom: false,
         scrollWheelZoom: false, boxZoom: false, keyboard: false, zoomAnimation: false } : {}) });
     mapRef.current = map;
-    const tiles = L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 }).addTo(map);
+    // Enlarge existing street tiles for the radar's close-up view.
+    const tiles = L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19,
+      ...(compact ? { maxZoom: 28, maxNativeZoom: 19 } : {}) }).addTo(map);
     tilesRef.current = tiles;
     tiles.on('tileerror', () => setTileError(true));
     if (compact) map.attributionControl.setPrefix(false);
