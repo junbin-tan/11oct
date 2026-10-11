@@ -16,7 +16,11 @@ export function Results({ state, onNewGame }: ResultsProps) {
 
   return (
     <main className="screen results">
-      <h1>Game over</h1>
+      <header className="results-header">
+        <span className="results-star" aria-hidden>✦</span>
+        <p className="eyebrow">The signal has ended</p>
+        <h1>Game over</h1>
+      </header>
       <p className="lede">
         {survivors.length === 0
           ? 'Everyone was caught.'
@@ -40,7 +44,7 @@ export function Results({ state, onNewGame }: ResultsProps) {
         ))}
       </ul>
 
-      <button className="btn" onClick={onNewGame}>New game</button>
+      <button className="btn primary" onClick={onNewGame}>New game</button>
     </main>
   );
 }

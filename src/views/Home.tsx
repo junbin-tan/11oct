@@ -27,7 +27,11 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
 
   return (
     <main className="screen home">
-      <h1>GPS Tag</h1>
+      <header className="home-hero">
+        <div className="hero-mark" aria-hidden><span>✦</span></div>
+        <p className="eyebrow">A live game in the world around you</p>
+        <h1>GPS Tag</h1>
+      </header>
       <p className="lede">Infection tag for your phone. Catchers scan runners’ QR codes; every catch joins the hunt.</p>
       <p className="fine-print">
         GPS is foreground-only. The game stores your latest fix, not your route, and clears it when the round ends.
@@ -82,7 +86,7 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
           </label>
         )}
 
-        <button className="btn" disabled={!canSubmit}>
+        <button className="btn primary" disabled={!canSubmit}>
           {busy ? 'Please wait…' : mode === 'create' ? 'Create game' : 'Join game'}
         </button>
       </form>

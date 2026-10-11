@@ -27,7 +27,7 @@ export function useGeolocation(sharing: boolean, visible: boolean) {
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<GpsStatus>(supported ? 'off' : 'unsupported');
   const [fix, setFix] = useState<Fix | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const [request, setRequest] = useState({ id: 0, forceFresh: false });
   const inFlight = useRef(false);
   const generation = useRef(0);
 
@@ -35,7 +35,17 @@ export function useGeolocation(sharing: boolean, visible: boolean) {
     if (!supported) return;
     setEnabled(true);
     setStatus('requesting');
-    setAttempt((n) => n + 1);
+    setRequest((current) => ({ id: current.id + 1, forceFresh: false }));
+  }, [supported]);
+
+  const reset = useCallback(() => {
+    if (!supported) return;
+    generation.current++;
+    inFlight.current = false;
+    setFix(null);
+    setEnabled(true);
+    setStatus('requesting');
+    setRequest((current) => ({ id: current.id + 1, forceFresh: true }));
   }, [supported]);
 
   useEffect(() => {
@@ -56,10 +66,15 @@ export function useGeolocation(sharing: boolean, visible: boolean) {
     if (!supported || !enabled || !sharing || !visible) return;
     const gen = ++generation.current;
     inFlight.current = false;
+    let firstRequest = true;
 
     const tick = () => {
       if (inFlight.current) return;
       inFlight.current = true;
+      const options = request.forceFresh && firstRequest
+        ? { ...POSITION_OPTIONS, maximumAge: 0 }
+        : POSITION_OPTIONS;
+      firstRequest = false;
       navigator.geolocation.getCurrentPosition(
         (position) => {
           if (gen !== generation.current) return;
@@ -79,7 +94,7 @@ export function useGeolocation(sharing: boolean, visible: boolean) {
           inFlight.current = false;
           setStatus(error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable');
         },
-        POSITION_OPTIONS,
+        options,
       );
     };
 
@@ -89,11 +104,11 @@ export function useGeolocation(sharing: boolean, visible: boolean) {
       generation.current++;
       clearInterval(timer);
     };
-  }, [supported, enabled, sharing, visible, attempt]);
+  }, [supported, enabled, sharing, visible, request]);
 
   useEffect(() => {
     if (!sharing) setFix(null);
   }, [sharing]);
 
-  return { status, fix, enable, enabled };
+  return { status, fix, enable, reset, enabled };
 }

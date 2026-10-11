@@ -105,6 +105,7 @@ export function App() {
           gpsStatus={gps.status}
           busy={busy}
           onEnableGps={gps.enable}
+          onResetGps={gps.reset}
           onStart={() => void run(() => api.startGame())}
         />
       )}
@@ -116,6 +117,7 @@ export function App() {
           gpsStatus={gps.status}
           busy={busy}
           onEnableGps={gps.enable}
+          onResetGps={gps.reset}
           onTag={onTag}
           onEnd={() => void run(() => api.endGame())}
         />

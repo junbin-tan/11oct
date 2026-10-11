@@ -8,6 +8,7 @@ interface LobbyProps {
   gpsStatus: Status;
   busy: boolean;
   onEnableGps: () => void;
+  onResetGps: () => void;
   onStart: () => void;
 }
 
@@ -15,7 +16,7 @@ export function inviteUrl(code: string): string {
   return `${window.location.origin}/?room=${code}`;
 }
 
-export function Lobby({ state, gpsStatus, busy, onEnableGps, onStart }: LobbyProps) {
+export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart }: LobbyProps) {
   const [copied, setCopied] = useState(false);
   const { game, me, players } = state;
 
@@ -33,8 +34,12 @@ export function Lobby({ state, gpsStatus, busy, onEnableGps, onStart }: LobbyPro
 
   return (
     <main className="screen lobby">
-      <p className="eyebrow">Room code</p>
-      <p className="room-code">{game.code}</p>
+      <header className="room-anchor">
+        <span className="anchor-star" aria-hidden>✦</span>
+        <p className="eyebrow">Room code</p>
+        <p className="room-code">{game.code}</p>
+        <p className="fine-print">Share this signal with the players joining your hunt.</p>
+      </header>
       <button className="btn secondary" onClick={copyInvite}>
         {copied ? 'Invite ready!' : 'Share invite link'}
       </button>
@@ -51,10 +56,10 @@ export function Lobby({ state, gpsStatus, busy, onEnableGps, onStart }: LobbyPro
         ))}
       </ul>
 
-      <GpsStatus status={gpsStatus} onEnable={onEnableGps} />
+      <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />
 
       {me.is_host ? (
-        <button className="btn" disabled={busy || players.length < 2} onClick={onStart}>
+        <button className="btn primary" disabled={busy || players.length < 2} onClick={onStart}>
           {players.length < 2 ? 'Waiting for players…' : 'Start game'}
         </button>
       ) : (

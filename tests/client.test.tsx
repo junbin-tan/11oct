@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, viewFor } from '../src/App';
+import { PlayerQr } from '../src/components/PlayerQr';
 import { radarPosition } from '../src/components/Radar';
 import { useGeolocation } from '../src/hooks/useGeolocation';
 import { useGame } from '../src/hooks/useGame';
 import { useRadar } from '../src/hooks/useRadar';
 import type { GameState, RadarResponse } from '../src/types';
+import { GpsStatus } from '../src/views/GpsStatus';
 
 const apiMock = vi.hoisted(() => ({
   getState: vi.fn(),
@@ -125,6 +128,33 @@ describe('QrScanner', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Tag' }));
     });
     expect(onSubmit).toHaveBeenCalledWith({ code: 'ABC123' });
+  });
+});
+
+describe('native dialogs', () => {
+  afterEach(cleanup);
+
+  function DialogHarness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Show my QR</button>
+        {open && <PlayerQr name="Ada" payload="tag:ROOM:p:t" tagCode="ABC123" onClose={() => setOpen(false)} />}
+      </>
+    );
+  }
+
+  it('closes on cancel and restores focus to its opener', () => {
+    render(<DialogHarness />);
+    const opener = screen.getByRole('button', { name: 'Show my QR' });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const dialog = screen.getByRole('dialog', { name: 'My tag QR' });
+    fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true }));
+
+    expect(screen.queryByRole('dialog', { name: 'My tag QR' })).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 });
 
@@ -265,12 +295,19 @@ describe('useRadar lifecycle', () => {
 describe('useGeolocation cleanup', () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     apiMock.updateLocation.mockReset();
   });
 
   function GpsProbe({ sharing }: { sharing: boolean }) {
     const gps = useGeolocation(sharing, true);
-    return <button onClick={gps.enable}>Enable</button>;
+    return (
+      <>
+        <span data-testid="gps-state">{`${gps.status}:${gps.fix ? 'fixed' : 'empty'}`}</span>
+        <button onClick={gps.enable}>Enable</button>
+        <button onClick={gps.reset}>Reset</button>
+      </>
+    );
   }
 
   it('ignores a position callback that arrives after tracking stops', async () => {
@@ -295,5 +332,76 @@ describe('useGeolocation cleanup', () => {
       coords: { latitude: 1.3, longitude: 103.8, accuracy: 5 },
     } as GeolocationPosition);
     expect(apiMock.updateLocation).not.toHaveBeenCalled();
+  });
+
+  it('clears the local fix, ignores the old request, and forces one fresh request', async () => {
+    vi.useFakeTimers();
+    apiMock.updateLocation.mockResolvedValue({});
+    const reports: PositionCallback[] = [];
+    const options: PositionOptions[] = [];
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        getCurrentPosition: (
+          success: PositionCallback,
+          _error: PositionErrorCallback,
+          positionOptions: PositionOptions,
+        ) => {
+          reports.push(success);
+          options.push(positionOptions);
+        },
+      },
+    });
+    Object.defineProperty(navigator, 'permissions', {
+      configurable: true,
+      value: { query: vi.fn().mockResolvedValue({ state: 'prompt' }) },
+    });
+
+    render(<GpsProbe sharing />);
+    fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+    expect(options[0]?.maximumAge).toBe(5_000);
+
+    const position = {
+      coords: { latitude: 1.3, longitude: 103.8, accuracy: 5 },
+    } as GeolocationPosition;
+    await act(async () => reports[0]!(position));
+    expect(screen.getByTestId('gps-state').textContent).toBe('active:fixed');
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(screen.getByTestId('gps-state').textContent).toBe('requesting:empty');
+    expect(options[1]?.maximumAge).toBe(0);
+
+    await act(async () => reports[0]!(position));
+    expect(screen.getByTestId('gps-state').textContent).toBe('requesting:empty');
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(1);
+
+    await act(async () => reports[1]!(position));
+    expect(screen.getByTestId('gps-state').textContent).toBe('active:fixed');
+    expect(apiMock.updateLocation).toHaveBeenCalledTimes(2);
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(options[2]?.maximumAge).toBe(5_000);
+  });
+});
+
+describe('GpsStatus recovery actions', () => {
+  afterEach(cleanup);
+
+  it('offers cache clearing only when GPS is denied or unavailable', () => {
+    const onEnable = vi.fn();
+    const onResetGps = vi.fn();
+    const view = render(<GpsStatus status="denied" onEnable={onEnable} onResetGps={onResetGps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear GPS cache' }));
+    expect(onResetGps).toHaveBeenCalledTimes(1);
+
+    view.rerender(<GpsStatus status="unavailable" onEnable={onEnable} onResetGps={onResetGps} />);
+    expect(screen.getByRole('button', { name: 'Clear GPS cache' })).toBeTruthy();
+
+    for (const status of ['off', 'requesting', 'active', 'unsupported'] as const) {
+      view.rerender(<GpsStatus status={status} onEnable={onEnable} onResetGps={onResetGps} />);
+      expect(screen.queryByRole('button', { name: 'Clear GPS cache' })).toBeNull();
+    }
   });
 });

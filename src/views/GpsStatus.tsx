@@ -3,9 +3,10 @@ import type { GpsStatus as Status } from '../hooks/useGeolocation';
 interface GpsStatusProps {
   status: Status;
   onEnable: () => void;
+  onResetGps: () => void;
 }
 
-export function GpsStatus({ status, onEnable }: GpsStatusProps) {
+export function GpsStatus({ status, onEnable, onResetGps }: GpsStatusProps) {
   switch (status) {
     case 'active':
       return <p className="gps ok">GPS on</p>;
@@ -15,14 +16,20 @@ export function GpsStatus({ status, onEnable }: GpsStatusProps) {
       return (
         <div className="gps notice">
           <p>Location permission is blocked. Allow location for this site in your browser settings, then retry.</p>
-          <button className="btn secondary" onClick={onEnable}>Retry GPS</button>
+          <div className="gps-actions">
+            <button className="btn secondary" onClick={onEnable}>Retry GPS</button>
+            <button className="btn secondary" onClick={onResetGps}>Clear GPS cache</button>
+          </div>
         </div>
       );
     case 'unavailable':
       return (
         <div className="gps notice">
           <p>No GPS fix yet. Try moving outdoors.</p>
-          <button className="btn secondary" onClick={onEnable}>Retry GPS</button>
+          <div className="gps-actions">
+            <button className="btn secondary" onClick={onEnable}>Retry GPS</button>
+            <button className="btn secondary" onClick={onResetGps}>Clear GPS cache</button>
+          </div>
         </div>
       );
     case 'unsupported':

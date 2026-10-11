@@ -45,7 +45,11 @@ export function Radar({ radar, players, nowMs }: RadarProps) {
           const { x, y } = radarPosition(point.distance_m, point.bearing_deg);
           return (
             <g key={point.player_id}>
-              <circle cx={x} cy={y} r={8} className={`radar-dot ${player.role}`} />
+              {player.role === 'catcher' ? (
+                <rect x={x - 7} y={y - 7} width={14} height={14} rx={2} className="radar-dot catcher" transform={`rotate(45 ${x} ${y})`} />
+              ) : (
+                <circle cx={x} cy={y} r={8} className="radar-dot runner" />
+              )}
               <text x={x} y={y - 12} className="radar-label">{player.name}</text>
             </g>
           );

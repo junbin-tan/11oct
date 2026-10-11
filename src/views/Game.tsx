@@ -16,11 +16,12 @@ interface GameProps {
   gpsStatus: Status;
   busy: boolean;
   onEnableGps: () => void;
+  onResetGps: () => void;
   onTag: (input: { payload: string } | { code: string }) => Promise<string | null>;
   onEnd: () => void;
 }
 
-export function Game({ state, radar, nowMs, gpsStatus, busy, onEnableGps, onTag, onEnd }: GameProps) {
+export function Game({ state, radar, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd }: GameProps) {
   const [modal, setModal] = useState<'qr' | 'scan' | null>(null);
   const { me, game, players, events } = state;
   const isCatcher = me.role === 'catcher';
@@ -36,6 +37,7 @@ export function Game({ state, radar, nowMs, gpsStatus, busy, onEnableGps, onTag,
   return (
     <main className="screen game">
       <header className="role-header">
+        <p className="eyebrow">Your role</p>
         <p className="role-label">{isCatcher ? 'Catcher' : 'Runner'}</p>
         <p className="role-hint">{isCatcher ? 'Find runners and scan their QR.' : 'Stay away from catchers.'}</p>
       </header>
@@ -46,11 +48,13 @@ export function Game({ state, radar, nowMs, gpsStatus, busy, onEnableGps, onTag,
         <span>{formatDuration(nowMs - (game.started_at ?? nowMs))}</span>
       </div>
 
-      {gpsStatus !== 'active' && <GpsStatus status={gpsStatus} onEnable={onEnableGps} />}
+      {gpsStatus !== 'active' && (
+        <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />
+      )}
 
       <Radar radar={radar} players={players} nowMs={nowMs} />
 
-      <button className="btn primary-action" onClick={() => setModal(isCatcher ? 'scan' : 'qr')}>
+      <button className="btn primary primary-action" onClick={() => setModal(isCatcher ? 'scan' : 'qr')}>
         {isCatcher ? 'Scan to tag' : 'Show my QR'}
       </button>
 
@@ -96,7 +100,7 @@ export function Game({ state, radar, nowMs, gpsStatus, busy, onEnableGps, onTag,
         <PlayerQr name={me.name} payload={me.qr_payload} tagCode={me.tag_code} onClose={() => setModal(null)} />
       )}
       {modal === 'scan' && isCatcher && (
-        <Suspense fallback={<div className="modal"><div className="modal-card">Starting camera…</div></div>}>
+        <Suspense fallback={<div className="modal-fallback" role="status"><div className="modal-card">Starting camera…</div></div>}>
           <QrScanner onSubmit={handleTag} onClose={() => setModal(null)} />
         </Suspense>
       )}

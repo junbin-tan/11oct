@@ -1,5 +1,6 @@
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { ModalDialog } from './ModalDialog';
 
 const REPEAT_SUPPRESS_MS = 3_000;
 const SCAN_DELAY_MS = 150;
@@ -95,8 +96,9 @@ export function QrScanner({ onSubmit, onClose }: QrScannerProps) {
   };
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="Scan to tag">
+    <ModalDialog label="Scan to tag" onClose={onClose}>
       <div className="modal-card">
+        <p className="eyebrow">Catcher signal</p>
         <h2>Scan to tag</h2>
         {cameraError ? (
           <p className="notice">{cameraError}</p>
@@ -121,6 +123,6 @@ export function QrScanner({ onSubmit, onClose }: QrScannerProps) {
         {message && <p className="error">{message}</p>}
         <button className="btn secondary" onClick={onClose}>Close</button>
       </div>
-    </div>
+    </ModalDialog>
   );
 }
