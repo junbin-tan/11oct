@@ -1860,3 +1860,7 @@ dialog.modal-map {
 .map-player-label { font-family: inherit; font-size: 11px; font-weight: 700; color: #252334; border-radius: 6px; }
 .map-waiting, .map-empty { position: absolute; z-index: 790; top: 50%; left: 50%; transform: translate(-50%, -50%); width: max-content; max-width: calc(100% - 32px); padding: 12px 16px; border-radius: 12px; background: #fff; color: #252334; box-shadow: 0 2px 12px #0002; text-align: center; font-size: .85rem; pointer-events: none; }
 .map-tile-error { position: absolute; z-index: 800; bottom: 32px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: #fff5d9; color: #50370b; border-radius: 12px; font-size: .78rem; }
+
+.map-summary .legend-marker.runner { background: #087f5b; }
+
+.map-summary .legend-marker.catcher { background: #c02657; }

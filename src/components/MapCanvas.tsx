@@ -23,6 +23,9 @@ export function MapCanvas({ points }: { points: MapPlayer[] }) {
   const tilesRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef(new Map<string, { marker: L.Marker; circle: L.Circle; label: HTMLElement; style: string }>());
   const fittedRef = useRef(false);
+  const exploredRef = useRef(false);
+  const pointsRef = useRef(points);
+  pointsRef.current = points;
   const [hasView, setHasView] = useState(false);
   const [tileError, setTileError] = useState(false);
 
@@ -34,15 +37,24 @@ export function MapCanvas({ points }: { points: MapPlayer[] }) {
     tilesRef.current = tiles;
     tiles.on('tileerror', () => setTileError(true));
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
-    const resize = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+    const markExplored = () => { exploredRef.current = true; };
+    const container = containerRef.current;
+    for (const event of ['pointerdown', 'wheel', 'keydown']) container.addEventListener(event, markExplored, { passive: true });
+    const resize = new ResizeObserver(() => {
+      map.invalidateSize({ pan: false });
+      // A newly opened dialog can settle to a different size after its first paint.
+      if (fittedRef.current && !exploredRef.current) fitPlayers(map, pointsRef.current);
+    });
     resize.observe(containerRef.current);
     return () => {
       resize.disconnect();
+      for (const event of ['pointerdown', 'wheel', 'keydown']) container.removeEventListener(event, markExplored);
       map.remove();
       mapRef.current = null;
       tilesRef.current = null;
       markersRef.current.clear();
       fittedRef.current = false;
+      exploredRef.current = false;
     };
   }, []);
 
@@ -95,13 +107,13 @@ export function MapCanvas({ points }: { points: MapPlayer[] }) {
       <div className="street-map" ref={containerRef} aria-label="Street map of game players" />
       <div className="map-controls" aria-label="Map controls">
         <div className="map-zoom-controls">
-          <button disabled={!hasView} onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">+</button>
-          <button disabled={!hasView} onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">−</button>
+          <button disabled={!hasView} onClick={() => { exploredRef.current = true; mapRef.current?.zoomIn(); }} aria-label="Zoom in">+</button>
+          <button disabled={!hasView} onClick={() => { exploredRef.current = true; mapRef.current?.zoomOut(); }} aria-label="Zoom out">−</button>
         </div>
-        <button disabled={!me} onClick={() => me && mapRef.current?.setView([me.lat, me.lng], 16, { animate: false })}>
+        <button disabled={!me} onClick={() => { exploredRef.current = true; if (me) mapRef.current?.setView([me.lat, me.lng], 16, { animate: false }); }}>
           <UiIcon name="location" size={18} />My location
         </button>
-        <button disabled={!points.length} onClick={() => mapRef.current && fitPlayers(mapRef.current, points)}>
+        <button disabled={!points.length} onClick={() => { exploredRef.current = false; if (mapRef.current) fitPlayers(mapRef.current, points); }}>
           <UiIcon name="users" size={18} />Show everyone
         </button>
       </div>
