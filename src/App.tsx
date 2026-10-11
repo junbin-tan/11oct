@@ -126,6 +126,7 @@ export function App() {
           state={state}
           radar={radar}
           radarReconnecting={radarReconnecting}
+          visible={visible}
           nowMs={nowMs}
           gpsStatus={gps.status}
           busy={busy}

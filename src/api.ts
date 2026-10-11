@@ -1,4 +1,4 @@
-import type { GameState, LocationAck, RadarResponse, TagResult } from './types';
+import type { GameState, LocationAck, MapResponse, RadarResponse, TagResult } from './types';
 
 const MESSAGES: Record<string, string> = {
   ROOM_NOT_FOUND: 'No game with that code.',
@@ -71,6 +71,7 @@ export const api = {
   updateLocation: (lat: number, lng: number, accuracy: number | null, capturedAt: number, signal?: AbortSignal) =>
     request<LocationAck>('PUT', '/api/game/location', { lat, lng, accuracy, captured_at: capturedAt }, signal),
   getRadar: (signal?: AbortSignal) => request<RadarResponse>('GET', '/api/game/radar', undefined, signal),
+  getMap: (signal?: AbortSignal) => request<MapResponse>('GET', '/api/game/map', undefined, signal),
   tag: (input: { payload: string } | { code: string }) =>
     request<StateResponse & { result: TagResult }>('POST', '/api/game/tag', input),
 };

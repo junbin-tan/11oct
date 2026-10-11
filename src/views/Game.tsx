@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { ExitButton } from '../components/ExitButton';
+import { GameMap } from '../components/GameMap';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { PlayerQr } from '../components/PlayerQr';
 import { Radar } from '../components/Radar';
@@ -16,6 +17,7 @@ interface GameProps {
   state: GameState;
   radar: RadarResponse | null;
   radarReconnecting: boolean;
+  visible?: boolean;
   nowMs: number;
   gpsStatus: Status;
   busy: boolean;
@@ -26,8 +28,8 @@ interface GameProps {
   onExit: () => Promise<string | null>;
 }
 
-export function Game({ state, radar, radarReconnecting, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd, onExit }: GameProps) {
-  const [modal, setModal] = useState<'qr' | 'scan' | null>(null);
+export function Game({ state, radar, radarReconnecting, visible = true, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd, onExit }: GameProps) {
+  const [modal, setModal] = useState<'qr' | 'scan' | 'map' | null>(null);
   const { me, game, players, events } = state;
   const isCatcher = me.role === 'catcher';
   const catchers = players.filter((p) => p.role === 'catcher').length;
@@ -110,12 +112,19 @@ export function Game({ state, radar, radarReconnecting, nowMs, gpsStatus, busy, 
       </details>
 
       <div className={`action-dock role-dock ${me.role}`}>
+        <button className="btn dock-map-action" onClick={() => setModal('map')}>
+          <UiIcon name="map" />Map
+        </button>
         <button className="btn role-primary dock-action" onClick={() => setModal(isCatcher ? 'scan' : 'qr')}>
           <UiIcon name={isCatcher ? 'scan' : 'qr'} />
           {isCatcher ? 'Scan to tag' : 'Show my QR'}
         </button>
       </div>
 
+      {modal === 'map' && (
+        <GameMap players={players} myId={me.player_id} nowMs={nowMs} visible={visible}
+          gpsStatus={gpsStatus} onEnableGps={onEnableGps} onResetGps={onResetGps} onClose={() => setModal(null)} />
+      )}
       {modal === 'qr' && (
         <PlayerQr name={me.name} payload={me.qr_payload} tagCode={me.tag_code} onClose={() => setModal(null)} />
       )}

@@ -96,6 +96,11 @@ export async function gameRoutes(app: FastifyInstance, { service, cookieSecure }
     return service.getRadar(requirePlayerId(request));
   });
 
+  app.get('/api/game/map', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return service.getMap(requirePlayerId(request));
+  });
+
   app.post<{ Body: TagInput }>(
     '/api/game/tag',
     {

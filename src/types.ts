@@ -1,4 +1,5 @@
 export type Role = 'runner' | 'catcher';
+export type { MapPoint, MapResponse } from '../server/game/map';
 export type GameStatus = 'waiting' | 'active' | 'ended';
 
 export interface PlayerSummary {

@@ -59,7 +59,7 @@ describe('rate limits', () => {
     }
   });
 
-  it('supports a 30-player round at five-second location/radar cadence for a full minute', async () => {
+  it('supports a 30-player round at five-second location/radar/map cadence for a full minute', async () => {
     await app.close();
     let clock = Date.now();
     ({ app } = await buildApp({ db, config, now: () => clock, rateLimit: true }));
@@ -83,6 +83,8 @@ describe('rate limits', () => {
           const radar = await inject({ method: 'GET', url: '/api/game/radar', headers: { cookie } });
           expect(radar.status).toBe(200); expect(radar.body.points).toHaveLength(29);
           expect(radar.body.next_ping_at).toBe(clock + 5_000);
+          const map = await inject({ method: 'GET', url: '/api/game/map', headers: { cookie } });
+          expect(map.status).toBe(200); expect(map.body.points).toHaveLength(30);
         }
       }
       if (second % 3 === 0) {

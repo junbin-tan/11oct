@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Db } from '../db.js';
 import { GameError } from '../errors.js';
 import { newId, normalizeCode, randomCode, randomToken } from './codes.js';
+import { buildMapSnapshot, type MapResponse } from './map.js';
 import { buildSnapshot, hasRecentLocation, isFresh, FIX_MAX_AGE_MS, RADAR_INTERVAL_MS, type RadarSnapshot } from './radar.js';
 
 export const MAX_PLAYERS = 30;
@@ -354,6 +355,17 @@ export class GameService {
         )
         .run(lat, lng, accuracyM, now, effectiveCapture, me.id);
       return { accepted: true, reason: 'accepted', next_upload_at: now + LOCATION_MIN_INTERVAL_MS, server_now: now };
+    })();
+  }
+
+  getMap(playerId: string): MapResponse {
+    return this.db.transaction(() => {
+      const me = this.requirePlayer(playerId);
+      const game = this.getGame(me.game_id);
+      if (game.status !== 'active') throw new GameError('GAME_NOT_ACTIVE', 'The game is not running.');
+      const players = this.db.prepare('SELECT * FROM players WHERE game_id = ? AND left_at IS NULL')
+        .all(game.id) as PlayerRow[];
+      return buildMapSnapshot(players, this.now());
     })();
   }
 
