@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
+import { ExitButton } from '../components/ExitButton';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { PlayerQr } from '../components/PlayerQr';
 import { Radar } from '../components/Radar';
@@ -22,9 +23,10 @@ interface GameProps {
   onResetGps: () => void;
   onTag: (input: { payload: string } | { code: string }) => Promise<string | null>;
   onEnd: () => void;
+  onExit: () => Promise<string | null>;
 }
 
-export function Game({ state, radar, radarReconnecting, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd }: GameProps) {
+export function Game({ state, radar, radarReconnecting, nowMs, gpsStatus, busy, onEnableGps, onResetGps, onTag, onEnd, onExit }: GameProps) {
   const [modal, setModal] = useState<'qr' | 'scan' | null>(null);
   const { me, game, players, events } = state;
   const isCatcher = me.role === 'catcher';
@@ -39,6 +41,10 @@ export function Game({ state, radar, radarReconnecting, nowMs, gpsStatus, busy, 
 
   return (
     <main className="screen game has-action-dock">
+      <div className="screen-bar game-exit-bar">
+        <p className="eyebrow">Room {game.code}</p>
+        <ExitButton phase="game" isHost={me.is_host} busy={busy} onExit={onExit} />
+      </div>
       <header className={`role-hero ${me.role}`}>
         <div className="role-symbol" aria-hidden><span /></div>
         <div className="role-copy">

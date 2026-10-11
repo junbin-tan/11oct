@@ -87,5 +87,8 @@ The service must be reached through Railway’s public HTTPS proxy. That proxy o
 - The host starts once at least two people have joined. GPS is optional; without it, a player is simply missing from the radar.
 - A catcher tags a runner by QR or six-character code. The same runner cannot be scored twice.
 - The game ends when no runners remain, or when the host ends it.
-- A browser can resume its game until that game ends. It cannot join another live game first.
+- Players can exit a waiting room or running game to return home and stop sharing GPS. A running game cannot be rejoined after exiting.
+- When the host exits, a waiting room closes for everyone; a running game ends and the remaining players see results.
+- Mid-game departures retain their earned tags in the results, labeled “Left game”, and do not count as survivors. Play ends if departures leave no runners or catchers.
+- A browser can resume its game until it exits or the game ends. Exit or finish the current game before joining another.
 - Refreshing resumes the signed browser session. Clearing site data starts a new player.

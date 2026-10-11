@@ -7,24 +7,32 @@ import type { GameState } from '../types';
 interface ResultsProps {
   state: GameState;
   onNewGame: () => void;
+  busy: boolean;
 }
 
-export function Results({ state, onNewGame }: ResultsProps) {
+export function Results({ state, onNewGame, busy }: ResultsProps) {
   const { game, players, me } = state;
   const duration = game.started_at && game.ended_at ? game.ended_at - game.started_at : 0;
   const totalTags = players.reduce((sum, p) => sum + p.tag_count, 0);
-  const survivors = players.filter((p) => p.role === 'runner');
+  const survivors = players.filter((p) => p.role === 'runner' && p.left_at === null);
+  const departureEnding = game.end_reason === 'host_left' || game.end_reason === 'players_left';
+  const hadDepartures = players.some((p) => p.left_at !== null);
+  const caughtAll = survivors.length === 0 && !hadDepartures;
   const ranked = [...players].sort((a, b) => b.tag_count - a.tag_count || a.name.localeCompare(b.name));
 
   return (
     <main className="screen results has-action-dock">
-      <header className={`results-hero ${survivors.length === 0 ? 'catchers-win' : 'runners-survive'}`}>
+      <header className={`results-hero ${departureEnding ? 'departure-ending' : survivors.length === 0 ? 'catchers-win' : 'runners-survive'}`}>
         <div className="confetti" aria-hidden><i /><i /><i /><i /><i /></div>
         <p className="eyebrow">Game over</p>
-        <h1>{survivors.length === 0 ? 'Caught them all!' : 'Still running!'}</h1>
+        <h1>{departureEnding ? 'Game ended' : survivors.length === 0 ? (caughtAll ? 'Caught them all!' : 'No runners remaining') : 'Still running!'}</h1>
         <p>
-          {survivors.length === 0
-            ? 'The Catchers took the whole field.'
+          {game.end_reason === 'host_left'
+            ? 'The host left the game.'
+            : game.end_reason === 'players_left'
+              ? 'There are no longer enough runners and catchers to continue.'
+              : survivors.length === 0
+            ? (caughtAll ? 'The Catchers took the whole field.' : 'The chase is over.')
             : `${survivors.map((p) => p.name).join(', ')} survived the chase.`}
         </p>
       </header>
@@ -48,7 +56,7 @@ export function Results({ state, onNewGame }: ResultsProps) {
             <PlayerAvatar name={p.name} role={p.role} />
             <span className="player-copy">
               <strong>{p.name}{p.id === me.player_id ? ' (you)' : ''}</strong>
-              <span>{p.role === 'catcher' ? (p.caught_at ? 'Caught' : 'First Catcher') : 'Survived'}</span>
+              <span>{p.left_at !== null ? 'Left game' : p.role === 'catcher' ? (p.caught_at ? 'Caught' : 'First Catcher') : 'Survived'}</span>
             </span>
             <strong className="tag-score">{plural(p.tag_count, 'tag')}</strong>
           </li>
@@ -56,7 +64,7 @@ export function Results({ state, onNewGame }: ResultsProps) {
       </ol>
 
       <div className="action-dock">
-        <button className="btn primary dock-action" onClick={onNewGame}><UiIcon name="play" />New game</button>
+        <button className="btn primary dock-action" disabled={busy} onClick={onNewGame}><UiIcon name="play" />{busy ? 'Leaving…' : 'New game'}</button>
       </div>
     </main>
   );

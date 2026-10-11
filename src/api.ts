@@ -10,7 +10,7 @@ const MESSAGES: Record<string, string> = {
   NOT_ENOUGH_PLAYERS: 'You need at least two players.',
   GAME_NOT_ACTIVE: 'The game is not running.',
   NOT_CATCHER: 'Only catchers can tag.',
-  ALREADY_IN_GAME: 'Finish your current game before starting or joining another.',
+  ALREADY_IN_GAME: 'Exit your current room or finish the game before starting or joining another.',
   RATE_LIMITED: 'Too many requests. Wait a moment.',
 };
 
@@ -65,6 +65,7 @@ export const api = {
   getState: () => request<{ state: GameState | null }>('GET', '/api/game'),
   createGame: (name: string) => request<StateResponse>('POST', '/api/games', { name }),
   joinGame: (code: string, name: string) => request<StateResponse>('POST', '/api/games/join', { code, name }),
+  leaveGame: () => request<{ state: null }>('POST', '/api/game/leave'),
   startGame: () => request<StateResponse>('POST', '/api/game/start'),
   endGame: () => request<StateResponse>('POST', '/api/game/end'),
   updateLocation: (lat: number, lng: number, accuracy: number | null, capturedAt: number, signal?: AbortSignal) =>

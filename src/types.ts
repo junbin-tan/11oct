@@ -9,6 +9,7 @@ export interface PlayerSummary {
   gps_ready: boolean;
   tag_count: number;
   caught_at: number | null;
+  left_at: number | null;
 }
 
 export interface TagEvent {
@@ -35,6 +36,7 @@ export interface GameState {
     created_at: number;
     started_at: number | null;
     ended_at: number | null;
+    end_reason: 'host_left' | 'players_left' | null;
   };
   players: PlayerSummary[];
   events: TagEvent[];

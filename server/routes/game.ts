@@ -70,6 +70,12 @@ export async function gameRoutes(app: FastifyInstance, { service, cookieSecure }
     return { state: stateFor(playerId) };
   });
 
+  app.post('/api/game/leave', async (request, reply) => {
+    service.leaveGame(sessionPlayerId(request));
+    reply.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, sameSite: 'lax', secure: cookieSecure });
+    return { state: null };
+  });
+
   app.post('/api/game/start', async (request) => {
     const playerId = requirePlayerId(request);
     service.startGame(playerId);

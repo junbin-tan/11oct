@@ -9,11 +9,11 @@ interface ModalDialogProps {
 
 export function ModalDialog({ label, children, onClose, variant = 'card' }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
+  // Capture before React commits autofocus children inside the dialog.
+  const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dialog) return;
 
     if (typeof dialog.showModal === 'function') {

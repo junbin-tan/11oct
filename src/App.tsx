@@ -63,9 +63,13 @@ export function App() {
     inviteHandled.current = true;
     if (window.location.search) window.history.replaceState(null, '', '/');
     if (!state || !inviteCode || state.game.code === inviteCode) return;
-    if (state.game.status === 'ended') leave();
+    if (state.game.status === 'ended') void leave();
     else setBlockedInvite(inviteCode);
   }, [state, inviteCode, leave]);
+
+  useEffect(() => {
+    if (state === null) setBlockedInvite(null);
+  }, [state]);
 
   const onTag = async (input: { payload: string } | { code: string }) => {
     const { data, error: tagError } = await run(() => api.tag(input), { quiet: true });
@@ -86,7 +90,7 @@ export function App() {
       <div className="status-stack" aria-live="polite">
         {reconnecting && <div className="banner"><span className="status-pulse" aria-hidden />Reconnecting…</div>}
         {blockedInvite && view !== 'home' && view !== 'loading' && (
-          <div className="banner">Finish this game before joining {blockedInvite}.</div>
+          <div className="banner">Exit this room or finish the game before joining {blockedInvite}.</div>
         )}
         {error && <div className="banner error">{error}</div>}
       </div>
@@ -114,6 +118,7 @@ export function App() {
           onEnableGps={gps.enable}
           onResetGps={gps.reset}
           onStart={() => void run(() => api.startGame())}
+          onExit={leave}
         />
       )}
       {view === 'game' && state && (
@@ -128,9 +133,10 @@ export function App() {
           onResetGps={gps.reset}
           onTag={onTag}
           onEnd={() => void run(() => api.endGame())}
+          onExit={leave}
         />
       )}
-      {view === 'results' && state && <Results state={state} onNewGame={leave} />}
+      {view === 'results' && state && <Results state={state} busy={busy} onNewGame={() => void leave()} />}
     </div>
   );
 }
