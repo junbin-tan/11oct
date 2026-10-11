@@ -80,7 +80,7 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
 
       {gpsNeedsAttention && <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />}
 
-      <Radar radar={radar} players={players} myId={me.player_id} visible={visible && !deadlineReached}
+      <Radar key={`${game.code}:${me.player_id}`} radar={radar} players={players} myId={me.player_id} visible={visible && !deadlineReached}
         nowMs={nowMs} reconnecting={radarReconnecting} />
 
       {!gpsNeedsAttention && <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />}

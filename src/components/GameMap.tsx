@@ -13,6 +13,7 @@ export interface MapPlayer extends MapPoint {
   role: PlayerSummary['role'];
   isMe: boolean;
   aging: boolean;
+  lastKnown?: boolean;
 }
 
 interface GameMapProps {

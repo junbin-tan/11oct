@@ -13,6 +13,7 @@ export interface MapResponse {
   snapshot_at: number;
   points: MapPoint[];
   unavailable_player_ids: string[];
+  last_known_self?: MapPoint | null;
 }
 
 export function buildMapSnapshot(players: Array<{
@@ -21,17 +22,22 @@ export function buildMapSnapshot(players: Array<{
   longitude: number | null;
   accuracy_m: number | null;
   captured_at: number | null;
-}>, now: number): MapResponse {
+}>, now: number, viewerId?: string): MapResponse {
   const points: MapPoint[] = [];
   const unavailable: string[] = [];
+  let lastKnownSelf: MapPoint | null = null;
   for (const player of players) {
     if (player.latitude === null || player.longitude === null || player.accuracy_m === null ||
-      player.captured_at === null || !isFresh(player, now)) {
+      player.captured_at === null || player.captured_at > now) {
       unavailable.push(player.id);
       continue;
     }
-    points.push({ player_id: player.id, lat: player.latitude, lng: player.longitude,
-      accuracy_m: player.accuracy_m, captured_at: player.captured_at });
+    const point = { player_id: player.id, lat: player.latitude, lng: player.longitude,
+      accuracy_m: player.accuracy_m, captured_at: player.captured_at };
+    if (player.id === viewerId) lastKnownSelf = point;
+    if (isFresh(player, now)) points.push(point);
+    else unavailable.push(player.id);
   }
-  return { server_now: now, snapshot_at: now, points, unavailable_player_ids: unavailable };
+  return { server_now: now, snapshot_at: now, points, unavailable_player_ids: unavailable,
+    last_known_self: lastKnownSelf };
 }

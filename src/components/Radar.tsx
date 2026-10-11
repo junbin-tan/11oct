@@ -66,7 +66,7 @@ export function Radar({ radar, players, myId, visible, nowMs, reconnecting = fal
 
       {points.length > 0 && (
         <div className="nearby-section">
-          <div className="nearby-title"><strong>Nearby players</strong><span>{points.length}</span></div>
+          <div className="nearby-title"><strong>Nearby players · 500 m range</strong><span>{points.length}</span></div>
           <ul className="nearby">
             {points
               .sort((a, b) => a.point.distance_m - b.point.distance_m)

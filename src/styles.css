@@ -210,7 +210,8 @@ div.notice { align-items: stretch; flex-direction: column; }
 .radar-map-north { position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: var(--ink); font-size: 11px; font-weight: 800; }
 .radar-map-range { position: absolute; z-index: 800; top: 9px; left: 50%; transform: translateX(-50%); padding: 2px 6px; border-radius: 5px; background: #ffffffdf; color: var(--ink); font-size: 10px; font-weight: 700; pointer-events: none; }
 .radar-map-waiting { position: absolute; inset: 22% 12%; display: grid; place-items: center; text-align: center; color: var(--muted-strong); font-size: .75rem; }
-.radar-map-reconnecting { position: absolute; z-index: 800; top: 20%; left: 14%; right: 14%; padding: 4px; background: #fff1e8ed; text-align: center; font-size: .65rem; }
+.radar-map-reconnecting { position: absolute; z-index: 800; top: 62%; left: 14%; right: 14%; padding: 4px; background: #fff1e8ed; text-align: center; font-size: .65rem; }
+.radar-map-reconnecting span { display: block; }
 .radar-map .leaflet-bottom.leaflet-right { bottom: 11%; width: 100%; text-align: center; }
 .radar-map .leaflet-right .leaflet-control-attribution { float: none; display: inline-block; max-width: 60%; margin: 0; font-size: 9px; line-height: 1.4; }
 .radar-map .map-tile-error { bottom: 19%; left: 16%; right: 16%; padding: 6px 8px; gap: 4px; font-size: .62rem; text-align: center; justify-content: center; }

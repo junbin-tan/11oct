@@ -62,19 +62,19 @@ function expectRadius(map: L.Map, origin: MapPlayer) {
   expect(map.getCenter().lng).toBeCloseTo(origin.lng, 5);
   const edge = map.containerPointToLatLng([width, width / 2]);
   // Leaflet rounds the projected center to a pixel (at most ~2 m at this size).
-  expect(Math.abs(L.latLng(origin.lat, origin.lng).distanceTo(edge) - 500)).toBeLessThan(3);
+  expect(Math.abs(L.latLng(origin.lat, origin.lng).distanceTo(edge) - 250)).toBeLessThan(3);
 }
 
-it('includes the 500 m boundary and excludes locations beyond it or without an origin', () => {
+it('includes the 250 m boundary and excludes locations beyond it or without an origin', () => {
   const origin = { ...me, lat: 0, lng: 0 };
   const atDistance = (distance: number) => ({ ...runner, lng: distance / 6_371_000 * 180 / Math.PI, lat: 0 });
-  expect(radarMapPoints([origin, atDistance(499.99)])).toHaveLength(2);
-  expect(radarMapPoints([origin, atDistance(500)])).toHaveLength(2);
-  expect(radarMapPoints([origin, atDistance(500.01)])).toHaveLength(1);
+  expect(radarMapPoints([origin, atDistance(249.99)])).toHaveLength(2);
+  expect(radarMapPoints([origin, atDistance(250)])).toHaveLength(2);
+  expect(radarMapPoints([origin, atDistance(250.01)])).toHaveLength(1);
   expect(radarMapPoints([runner])).toEqual([]);
 });
 
-it('keeps a north-up 500 m radius while following location changes and resizing', () => {
+it('keeps a north-up 250 m radius while following location changes and resizing', () => {
   const view = render(<MapCanvas points={[me, runner, { ...runner, player_id: 'far', lat: 1.4 }]} mode="radar" />);
   const map = maps[0]!;
   expectRadius(map, me);
@@ -93,13 +93,13 @@ it('keeps a north-up 500 m radius while following location changes and resizing'
   width = 240;
   act(() => resizes[0]!());
   expectRadius(map, me);
-  const moved = { ...me, lat: 1.302, lng: 103.802 };
+  const moved = { ...me, lat: 1.3015, lng: 103.801 };
   view.rerender(<MapCanvas points={[moved, runner]} mode="radar" />);
   expectRadius(map, moved);
   expect(view.container.querySelectorAll('.leaflet-overlay-pane path')).toHaveLength(2);
 });
 
-it('shows waiting states, excludes departed players, ages markers, and removes them when own GPS expires', async () => {
+it('shows waiting states, excludes departed players, ages markers, and retains self when own GPS expires', async () => {
   let resolve!: (response: MapResponse) => void;
   api.getMap.mockImplementationOnce(() => new Promise<MapResponse>((done) => { resolve = done; }));
   const view = render(<RadarMap {...props} />);
@@ -111,9 +111,13 @@ it('shows waiting states, excludes departed players, ages markers, and removes t
   expect((view.container.querySelector('.map-player.runner') as HTMLElement).style.opacity).toBe('0.55');
   view.rerender(<RadarMap {...props} players={props.players.map((p) => p.id === 'runner' ? { ...p, left_at: at } : p)} />);
   expect(view.container.querySelectorAll('.map-player')).toHaveLength(1);
+  const mapElement = view.container.querySelector('.street-map');
   view.rerender(<RadarMap {...props} nowMs={at + 30_001} />);
-  expect(view.container.querySelector('.map-player')).toBeNull();
-  expect(screen.getByText('Waiting for your fresh GPS location…')).toBeTruthy();
+  expect(view.container.querySelectorAll('.map-player')).toHaveLength(1);
+  expect(view.container.querySelector('.map-player.last-known.me')).toBeTruthy();
+  expect(view.container.querySelector('.street-map')).toBe(mapElement);
+  expect(screen.getByText('You · Catcher · last known')).toBeTruthy();
+  expect(screen.getByText('Showing your last known location · Refreshing GPS…')).toBeTruthy();
 });
 
 it('waits for your location even if other players have GPS, and recovers on refresh', async () => {
@@ -125,6 +129,69 @@ it('waits for your location even if other players have GPS, and recovers on refr
   expect(view.container.querySelector('.street-map')).toBeNull();
   await act(async () => vi.advanceTimersByTimeAsync(5000));
   expect(view.container.querySelectorAll('.map-player')).toHaveLength(2);
+});
+
+it('preserves the same map through missing self, outages, and a newer GPS fix', async () => {
+  vi.useFakeTimers();
+  const view = render(<RadarMap {...props} />);
+  await act(async () => {});
+  const element = view.container.querySelector('.street-map');
+  const map = maps[0]!;
+  expect(screen.getByText('250 m')).toBeTruthy();
+  expect(screen.getByLabelText('North-up street map, 250 metre radius')).toBeTruthy();
+  api.getMap.mockResolvedValue(snapshot([]));
+  await act(async () => vi.advanceTimersByTimeAsync(5000));
+  view.rerender(<RadarMap {...props} nowMs={at + 30_001} />);
+  expect(view.container.querySelector('.street-map')).toBe(element);
+  expect(view.container.querySelectorAll('.map-player')).toHaveLength(1);
+  expectRadius(map, me);
+  expect((view.container.querySelector('.map-player.me') as HTMLElement).style.opacity).toBe('0.55');
+
+  api.getMap.mockRejectedValue(new Error('offline'));
+  await act(async () => vi.advanceTimersByTimeAsync(5000));
+  expect(screen.getByText('Connection lost. Retrying map…')).toBeTruthy();
+  expect(view.container.querySelector('.street-map')).toBe(element);
+
+  const moved = { ...me, lat: 1.302, captured_at: at + 31_000 };
+  api.getMap.mockResolvedValue(snapshot([moved]));
+  view.rerender(<RadarMap {...props} nowMs={at + 31_000} />);
+  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expectRadius(map, moved);
+  expect(view.container.querySelector('.street-map')).toBe(element);
+  expect(view.container.querySelector('.last-known')).toBeNull();
+  expect(screen.queryByText('Showing your last known location · Refreshing GPS…')).toBeNull();
+  expect(screen.queryByText('Connection lost. Retrying map…')).toBeNull();
+  expect((view.container.querySelector('.map-player.me') as HTMLElement).style.opacity).toBe('1');
+
+  // An older response must not move the viewer back to an earlier reading.
+  api.getMap.mockResolvedValue(snapshot([me]));
+  await act(async () => vi.advanceTimersByTimeAsync(5000));
+  expectRadius(map, moved);
+});
+
+it('restores stored self on reload, keeps fresh remote players, and resets when the viewer changes', async () => {
+  api.getMap.mockResolvedValue({ ...snapshot([{ ...runner, captured_at: at + 40_000 }]), last_known_self: me });
+  const view = render(<RadarMap {...props} nowMs={at + 40_000} />);
+  await waitFor(() => expect(maps).toHaveLength(1));
+  expectRadius(maps[0]!, me);
+  expect(view.container.querySelectorAll('.map-player')).toHaveLength(2);
+  expect(view.container.querySelector('.map-player.me.last-known')).toBeTruthy();
+  expect(view.container.querySelector('.map-player.runner.aging')).toBeNull();
+  api.getMap.mockResolvedValue({ ...snapshot([]), last_known_self: me });
+  view.rerender(<RadarMap {...props} myId="runner" nowMs={at + 40_000} />);
+  await waitFor(() => expect(screen.getByText('Waiting for your fresh GPS location…')).toBeTruthy());
+  expect(view.container.querySelector('.street-map')).toBeNull();
+});
+
+it('clears the retained map when the game changes', async () => {
+  const gameProps = { state, radar: null, radarReconnecting: false, nowMs: at, gpsStatus: 'active' as const,
+    busy: false, onEnableGps: vi.fn(), onResetGps: vi.fn(), onTag: vi.fn(), onEnd: vi.fn(), onExit: vi.fn() };
+  const view = render(<Game {...gameProps} />);
+  await waitFor(() => expect(maps).toHaveLength(1));
+  api.getMap.mockResolvedValue(snapshot([]));
+  view.rerender(<Game {...gameProps} state={{ ...state, game: { ...state.game, code: 'NEWROOM' } }} />);
+  await waitFor(() => expect(screen.getByText('Waiting for your fresh GPS location…')).toBeTruthy());
+  expect(view.container.querySelector('.street-map')).toBeNull();
 });
 
 it('keeps players visible during tile failures and retries streets inside the radar', async () => {

@@ -76,6 +76,38 @@ it('rejects anonymous, forged, waiting and ended-game access', async () => {
   expect((await call('GET', '/api/game/map', host.cookie)).body.error).toBe('GAME_NOT_ACTIVE');
 });
 
+it('returns only the authenticated viewer’s last known fix after fresh points expire', async () => {
+  const { host, runner } = await room();
+  await location(host.cookie, 1.3);
+  await location(runner.cookie, 1.4);
+  const capturedAt = clock;
+  clock += 30_001;
+  const map = (await call('GET', '/api/game/map', host.cookie)).body as MapResponse;
+  expect(map.points).toEqual([]);
+  expect(map.last_known_self).toEqual({ player_id: host.body.state.me.player_id, lat: 1.3,
+    lng: 103.8, accuracy_m: 10, captured_at: capturedAt });
+  expect(map.unavailable_player_ids).toHaveLength(2);
+  const runnerMap = (await call('GET', '/api/game/map', runner.cookie)).body as MapResponse;
+  expect(runnerMap.last_known_self?.player_id).toBe(runner.body.state.me.player_id);
+  expect(runnerMap.last_known_self?.lat).toBe(1.4);
+  expect(JSON.stringify(map)).not.toContain('1.4');
+
+  await location(host.cookie, 1.31);
+  const fresh = (await call('GET', '/api/game/map', host.cookie)).body as MapResponse;
+  expect(fresh.last_known_self).toEqual(fresh.points[0]);
+  expect(fresh.last_known_self?.captured_at).toBe(clock);
+});
+
+it('has no fallback for absent, unknown-accuracy, or legacy self locations', async () => {
+  const { host } = await room();
+  expect((await call('GET', '/api/game/map', host.cookie)).body.last_known_self).toBeNull();
+  await location(host.cookie, 1.3, null);
+  expect((await call('GET', '/api/game/map', host.cookie)).body.last_known_self).toBeNull();
+  clock += 5000;
+  await location(host.cookie, 1.3, 10, null);
+  expect((await call('GET', '/api/game/map', host.cookie)).body.last_known_self).toBeNull();
+});
+
 it('removes departed players and rejects their old cookie', async () => {
   const { host, runner } = await room(false);
   await call('POST', '/api/games/join', '', { name: 'Other runner', code: host.body.state.game.code });

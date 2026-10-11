@@ -392,7 +392,7 @@ export class GameService {
       if (game.status !== 'active') throw new GameError('GAME_NOT_ACTIVE', 'The game is not running.');
       const players = this.db.prepare('SELECT * FROM players WHERE game_id = ? AND left_at IS NULL')
         .all(game.id) as PlayerRow[];
-      return buildMapSnapshot(players, this.now());
+      return buildMapSnapshot(players, this.now(), me.id);
     })();
   }
 

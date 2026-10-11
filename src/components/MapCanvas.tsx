@@ -3,17 +3,17 @@ import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { MapPlayer } from './GameMap';
 import { UiIcon } from './UiIcon';
+import { RADAR_RANGE_M } from '../radarConfig';
 
 const TILE_URL = import.meta.env.VITE_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTRIBUTION = import.meta.env.VITE_MAP_TILE_ATTRIBUTION ||
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-export const RADAR_RANGE_M = 500;
 
 function fitRadar(map: L.Map, points: MapPlayer[]) {
   const me = points.find((point) => point.isMe);
   if (!me) return;
   const bounds = L.latLng(me.lat, me.lng).toBounds(RADAR_RANGE_M * 2);
-  // Fractional zoom keeps the edge at 500 m, including after a resize.
+  // Fractional zoom preserves the configured radius, including after a resize.
   map.setView([me.lat, me.lng], map.getBoundsZoom(bounds), { animate: false });
 }
 
@@ -95,7 +95,8 @@ export function MapCanvas({ points: allPoints, mode = 'full' }: { points: MapPla
     for (const point of points) {
       const position: L.LatLngTuple = [point.lat, point.lng];
       const color = point.role === 'runner' ? '#2563eb' : '#dc2626';
-      const style = `${point.role}${point.isMe ? ' me' : ''}${point.aging ? ' aging' : ''}`;
+      const faded = point.aging || point.lastKnown;
+      const style = `${point.role}${point.isMe ? ' me' : ''}${point.lastKnown ? ' last-known' : point.aging ? ' aging' : ''}`;
       let entry = markersRef.current.get(point.player_id);
       if (!entry) {
         const label = document.createElement('span');
@@ -105,16 +106,16 @@ export function MapCanvas({ points: allPoints, mode = 'full' }: { points: MapPla
         entry = { marker, circle, label, style: '' };
         markersRef.current.set(point.player_id, entry);
       }
-      entry.label.textContent = `${point.isMe ? 'You' : point.name} · ${point.role === 'runner' ? 'Runner' : 'Catcher'}${point.aging ? ' · aging' : ''}`;
+      entry.label.textContent = `${point.isMe ? 'You' : point.name} · ${point.role === 'runner' ? 'Runner' : 'Catcher'}${point.lastKnown ? ' · last known' : point.aging ? ' · aging' : ''}`;
       entry.marker.setLatLng(position);
       if (entry.style !== style) {
         entry.marker.setIcon(L.divIcon({ className: `map-player ${style}`, html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] }));
-        entry.marker.setOpacity(point.aging ? 0.55 : 1);
+        entry.marker.setOpacity(faded ? 0.55 : 1);
         entry.style = style;
       }
       if (!map.hasLayer(entry.marker)) entry.marker.addTo(map);
       entry.circle.setLatLng(position).setRadius(point.accuracy_m)
-        .setStyle({ color, opacity: point.aging ? 0.35 : 0.65, fillOpacity: point.aging ? 0.05 : 0.1 });
+        .setStyle({ color, opacity: faded ? 0.35 : 0.65, fillOpacity: faded ? 0.05 : 0.1 });
     }
     if (compact && points.length) {
       map.invalidateSize({ pan: false });
@@ -130,7 +131,7 @@ export function MapCanvas({ points: allPoints, mode = 'full' }: { points: MapPla
   const me = points.find((point) => point.isMe);
   return (
     <>
-      <div className="street-map" ref={containerRef} aria-label={compact ? 'North-up street map, 500 metre radius' : 'Street map of game players'} />
+      <div className="street-map" ref={containerRef} aria-label={compact ? `North-up street map, ${RADAR_RANGE_M} metre radius` : 'Street map of game players'} />
       {!compact && <div className="map-controls" aria-label="Map controls">
         <div className="map-zoom-controls">
           <button disabled={!hasView} onClick={() => { exploredRef.current = true; mapRef.current?.zoomIn(); }} aria-label="Zoom in">+</button>

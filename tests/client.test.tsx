@@ -549,7 +549,7 @@ describe('radar freshness and uncertainty display', () => {
     expect(screen.getByLabelText('Radar street map')).toBeTruthy();
     expect(screen.getByText('Live radar')).toBeTruthy();
     expect(screen.getByLabelText('Radar legend').textContent).toBe('RunnerCatcher');
-    expect(screen.getByText('Nearby players')).toBeTruthy();
+    expect(screen.getByText('Nearby players · 500 m range')).toBeTruthy();
     expect(view.container.querySelector('.nearby-player')?.textContent).toBe('BobRunner');
   });
   it('shows combined uncertainty and ages the reading during a network outage', () => {
