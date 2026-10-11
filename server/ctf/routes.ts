@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Db } from '../db.js';
 import { clientAddress } from '../proxy.js';
 import { LandmarkLookup } from './landmarks.js';
@@ -24,54 +24,51 @@ export async function ctfRoutes(app: FastifyInstance, { db, cookieSecure, now }:
   };
   const cookieOptions = { signed: true, httpOnly: true, sameSite: 'lax' as const, secure: cookieSecure, path: '/api/ctf', maxAge: 24 * 60 * 60 };
   const setSession = (reply: FastifyReply, id: string) => reply.setCookie(CTF_COOKIE, id, cookieOptions);
-  app.addHook('onRoute', route => {
-    const action = route.url.split('/').pop();
-    route.config = { ...route.config, rateLimit: {
+  const limits = (action: string) => ({ config: { rateLimit: {
       max: action === 'landmarks' ? 10 : action === 'tag' ? 30 : action === 'create' || action === 'join' ? 40 : 120,
       timeWindow: '1 minute',
       keyGenerator: (request: FastifyRequest) => `ctf:${action === 'create' || action === 'join'
         ? clientAddress(request.headers, request.ip) : session(request) ?? clientAddress(request.headers, request.ip)}:${action}`,
-    } };
-  });
+  } } });
   app.addHook('onSend', async (_request, reply) => { reply.header('Cache-Control', 'no-store'); });
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof CtfError) return reply.code(error.statusCode).send({ error: error.code, message: error.message });
     const status = typeof error.statusCode === 'number' ? error.statusCode : 500;
     if (status >= 500) request.log.error(error);
     return reply.code(status).send({ error: status === 429 ? 'RATE_LIMITED' : 'SERVER_ERROR', message: status >= 500 ? 'Capture the Flag could not complete that request.' : error.message });
   });
-  app.get('/api/ctf/state', async request => ({ state: service.state(session(request)), server_now: (now ?? Date.now)() }));
-  app.post<{ Body: { name?: unknown } }>('/api/ctf/create', async (request, reply) => {
+  app.get('/api/ctf/state', limits('state'), async request => ({ state: service.state(session(request)), server_now: (now ?? Date.now)() }));
+  app.post<{ Body: { name?: unknown } }>('/api/ctf/create', limits('create'), async (request, reply) => {
     const id = service.create(request.body?.name, session(request)); setSession(reply, id);
     return { state: service.state(id) };
   });
-  app.post<{ Body: { name?: unknown; code?: unknown } }>('/api/ctf/join', async (request, reply) => {
+  app.post<{ Body: { name?: unknown; code?: unknown } }>('/api/ctf/join', limits('join'), async (request, reply) => {
     const id = service.join(request.body?.name, request.body?.code, session(request)); setSession(reply, id);
     return { state: service.state(id) };
   });
-  app.post('/api/ctf/leave', async (request, reply) => {
+  app.post('/api/ctf/leave', limits('leave'), async (request, reply) => {
     service.leave(session(request)); reply.clearCookie(CTF_COOKIE, { ...cookieOptions, maxAge: undefined });
     return { state: null };
   });
-  app.put<{ Body: Parameters<CtfService['location']>[1] }>('/api/ctf/location', async request => service.location(required(request), request.body ?? {}));
-  app.post('/api/ctf/setup/start', async request => {
+  app.put<{ Body: Parameters<CtfService['location']>[1] }>('/api/ctf/location', limits('location'), async request => service.location(required(request), request.body ?? {}));
+  app.post('/api/ctf/setup/start', limits('setup-start'), async request => {
     const id = required(request); service.setupStart(id); return { state: service.state(id) };
   });
-  app.get('/api/ctf/landmarks', async request => {
+  app.get('/api/ctf/landmarks', limits('landmarks'), async request => {
     const origin = service.landmarkOrigin(required(request));
     return { ...await landmarks.find(origin.start), setup_version: origin.setup_version };
   });
-  app.put<{ Body: { setup_version?: unknown; checkpoints?: unknown } }>('/api/ctf/setup/checkpoints', async request => {
+  app.put<{ Body: { setup_version?: unknown; checkpoints?: unknown } }>('/api/ctf/setup/checkpoints', limits('checkpoints'), async request => {
     const id = required(request); service.saveCheckpoints(id, request.body?.setup_version, request.body?.checkpoints);
     return { state: service.state(id) };
   });
-  app.post('/api/ctf/start', async request => {
+  app.post('/api/ctf/start', limits('start'), async request => {
     const id = required(request); service.start(id); return { state: service.state(id) };
   });
-  app.post('/api/ctf/end', async request => {
+  app.post('/api/ctf/end', limits('end'), async request => {
     const id = required(request); service.end(id); return { state: service.state(id) };
   });
-  app.post<{ Body: Parameters<CtfService['tag']>[1] }>('/api/ctf/tag', async request => {
+  app.post<{ Body: Parameters<CtfService['tag']>[1] }>('/api/ctf/tag', limits('tag'), async request => {
     const id = required(request), result = service.tag(id, request.body ?? {});
     return { result, state: service.state(id) };
   });
