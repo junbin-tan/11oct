@@ -1,12 +1,14 @@
 import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
-import Fastify, { type FastifyError } from 'fastify';
+import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
 import { GameError } from './errors.js';
 import { GameService } from './game/service.js';
-import { gameRoutes } from './routes/game.js';
+import { PLAYER_REQUEST_LIMIT, RATE_WINDOW } from './limits.js';
+import { clientAddress, trustNearestProxy } from './proxy.js';
+import { gameRoutes, SESSION_COOKIE } from './routes/game.js';
 
 export interface AppOptions {
   db: Db;
@@ -16,13 +18,27 @@ export interface AppOptions {
   logger?: boolean;
 }
 
+export function rateLimitKey(request: FastifyRequest): string {
+  const raw = request.cookies[SESSION_COOKIE];
+  if (typeof raw === 'string' && raw.length > 0) {
+    const unsigned = request.unsignCookie(raw);
+    if (unsigned.valid && unsigned.value) return `player:${unsigned.value}`;
+  }
+  return `ip:${clientAddress(request.headers, request.ip)}`;
+}
+
 export async function buildApp({ db, config, now, rateLimit = true, logger = false }: AppOptions) {
-  const app = Fastify({ logger, trustProxy: true, bodyLimit: 16 * 1024 });
+  const app = Fastify({ logger, trustProxy: trustNearestProxy, bodyLimit: 16 * 1024 });
   const service = new GameService(db, now);
 
   await app.register(fastifyCookie, { secret: config.cookieSecret });
   if (rateLimit) {
-    await app.register(fastifyRateLimit, { max: 600, timeWindow: '1 minute' });
+    await app.register(fastifyRateLimit, {
+      max: PLAYER_REQUEST_LIMIT,
+      timeWindow: RATE_WINDOW,
+      keyGenerator: rateLimitKey,
+      allowList: (request) => request.url === '/health' || request.url === '/api/health',
+    });
   }
 
   app.addHook('onRequest', async (request, reply) => {

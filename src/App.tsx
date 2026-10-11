@@ -35,6 +35,7 @@ export function App() {
   const view = viewFor(state);
   const [toast, setToast] = useState<string | null>(null);
   const [inviteCode] = useState(initialRoomCode);
+  const [blockedInvite, setBlockedInvite] = useState<string | null>(null);
   const inviteHandled = useRef(false);
 
   const sharing = view === 'lobby' || view === 'game';
@@ -61,7 +62,9 @@ export function App() {
     if (state === undefined || inviteHandled.current) return;
     inviteHandled.current = true;
     if (window.location.search) window.history.replaceState(null, '', '/');
-    if (state && inviteCode && state.game.code !== inviteCode) leave();
+    if (!state || !inviteCode || state.game.code === inviteCode) return;
+    if (state.game.status === 'ended') leave();
+    else setBlockedInvite(inviteCode);
   }, [state, inviteCode, leave]);
 
   const onTag = async (input: { payload: string } | { code: string }) => {
@@ -81,6 +84,9 @@ export function App() {
   return (
     <div className={`app ${role ? `role-${role}` : ''}`}>
       {reconnecting && <div className="banner">Reconnecting…</div>}
+      {blockedInvite && view !== 'home' && view !== 'loading' && (
+        <div className="banner">Finish this game before joining {blockedInvite}.</div>
+      )}
       {error && <div className="banner error">{error}</div>}
       {toast && <div className="toast" role="status">{toast}</div>}
 

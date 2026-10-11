@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { GameService, LocationInput, TagInput } from '../game/service.js';
 import { GameError } from '../errors.js';
+import { CREATE_JOIN_LIMIT, RATE_WINDOW, TAG_LIMIT } from '../limits.js';
+import { clientAddress } from '../proxy.js';
 
 export const SESSION_COOKIE = 'gps_tag_player';
 const SESSION_MAX_AGE_S = 24 * 60 * 60;
@@ -41,7 +43,15 @@ export async function gameRoutes(app: FastifyInstance, { service, cookieSecure }
     return state;
   };
 
-  const strict = { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } };
+  const strict = {
+    config: {
+      rateLimit: {
+        max: CREATE_JOIN_LIMIT,
+        timeWindow: RATE_WINDOW,
+        keyGenerator: (request: FastifyRequest) => `ip:${clientAddress(request.headers, request.ip)}`,
+      },
+    },
+  };
 
   app.get('/api/game', async (request) => {
     const playerId = sessionPlayerId(request);
@@ -49,7 +59,7 @@ export async function gameRoutes(app: FastifyInstance, { service, cookieSecure }
   });
 
   app.post<{ Body: { name?: unknown } }>('/api/games', strict, async (request, reply) => {
-    const { playerId } = service.createGame(request.body?.name);
+    const { playerId } = service.createGame(request.body?.name, sessionPlayerId(request));
     setSession(reply, playerId);
     return { state: stateFor(playerId) };
   });
@@ -82,7 +92,15 @@ export async function gameRoutes(app: FastifyInstance, { service, cookieSecure }
 
   app.post<{ Body: TagInput }>(
     '/api/game/tag',
-    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    {
+      config: {
+        rateLimit: {
+          max: TAG_LIMIT,
+          timeWindow: RATE_WINDOW,
+          keyGenerator: (request: FastifyRequest) => `${sessionPlayerId(request) ?? request.ip}:tag`,
+        },
+      },
+    },
     async (request) => {
       const playerId = requirePlayerId(request);
       const result = service.tag(playerId, request.body ?? {});

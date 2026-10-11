@@ -122,9 +122,10 @@ export class GameService {
     private readonly now: () => number = Date.now,
   ) {}
 
-  createGame(nameInput: unknown): { playerId: string } {
+  createGame(nameInput: unknown, currentPlayerId: string | null = null): { playerId: string } {
     const name = normalizeName(nameInput);
     return this.db.transaction(() => {
+      this.assertCanSwitchRoom(currentPlayerId);
       const now = this.now();
       const gameId = newId();
       const playerId = newId();
@@ -153,6 +154,7 @@ export class GameService {
         const existing = this.findPlayer(currentPlayerId);
         if (existing && existing.game_id === game.id) return { playerId: existing.id };
       }
+      this.assertCanSwitchRoom(currentPlayerId);
 
       if (game.status === 'active') throw new GameError('ROOM_STARTED', 'That game has already started.');
       if (game.status === 'ended') throw new GameError('ROOM_ENDED', 'That game has ended.');
@@ -175,7 +177,7 @@ export class GameService {
     const now = this.now();
 
     const players = this.db
-      .prepare(`SELECT * FROM players WHERE game_id = ? ORDER BY joined_at, id`)
+      .prepare(`SELECT * FROM players WHERE game_id = ? ORDER BY joined_at, rowid`)
       .all(game.id) as PlayerRow[];
     const tagCounts = new Map(
       (
@@ -463,6 +465,19 @@ export class GameService {
       if (!exists.get(code)) return code;
     }
     throw new Error('Could not allocate a unique room code.');
+  }
+
+  private assertCanSwitchRoom(playerId: string | null): void {
+    if (!playerId) return;
+    const existing = this.findPlayer(playerId);
+    if (!existing) return;
+    const current = this.getGame(existing.game_id);
+    if (current.status !== 'ended') {
+      throw new GameError(
+        'ALREADY_IN_GAME',
+        'Finish your current game before starting or joining another.',
+      );
+    }
   }
 
   private findPlayer(playerId: string): PlayerRow | undefined {

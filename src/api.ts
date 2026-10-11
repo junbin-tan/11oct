@@ -10,6 +10,7 @@ const MESSAGES: Record<string, string> = {
   NOT_ENOUGH_PLAYERS: 'You need at least two players.',
   GAME_NOT_ACTIVE: 'The game is not running.',
   NOT_CATCHER: 'Only catchers can tag.',
+  ALREADY_IN_GAME: 'Finish your current game before starting or joining another.',
   RATE_LIMITED: 'Too many requests. Wait a moment.',
 };
 

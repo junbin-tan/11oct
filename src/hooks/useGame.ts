@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError } from '../api';
+import { api } from '../api';
 import type { GameState } from '../types';
 
 export const POLL_INTERVAL_MS = 3_000;
@@ -41,9 +41,8 @@ export function useGame() {
       const { state: next } = await api.getState();
       apply(seq, next);
       setReconnecting(false);
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'NETWORK') setReconnecting(true);
-      else setState((prev) => (prev === undefined ? null : prev));
+    } catch {
+      setReconnecting(true);
     } finally {
       polling.current = false;
     }
@@ -79,17 +78,13 @@ export function useGame() {
     setError(null);
   }, []);
 
+  const phase = state === undefined ? 'loading' : state === null ? 'home' : state.game.status;
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const status = state?.game.status;
-  useEffect(() => {
-    if (!visible || !status || status === 'ended') return;
+    if (!visible || phase === 'home' || phase === 'ended') return;
     void refresh();
     const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [visible, status, refresh]);
+  }, [visible, phase, refresh]);
 
   const serverNow = useCallback(() => Date.now() + clockOffset, [clockOffset]);
 

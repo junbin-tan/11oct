@@ -63,8 +63,13 @@ p {
 .lede,
 .muted,
 .waiting,
-.eyebrow {
+.eyebrow,
+.fine-print {
   color: var(--muted);
+}
+
+.fine-print {
+  font-size: 0.9rem;
 }
 
 .stack {

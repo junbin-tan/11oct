@@ -9,7 +9,8 @@ export type ErrorCode =
   | 'NOT_ENOUGH_PLAYERS'
   | 'GAME_NOT_ACTIVE'
   | 'NOT_CATCHER'
-  | 'INVALID_TAG';
+  | 'INVALID_TAG'
+  | 'ALREADY_IN_GAME';
 
 const STATUS: Record<ErrorCode, number> = {
   INVALID_INPUT: 400,
@@ -23,6 +24,7 @@ const STATUS: Record<ErrorCode, number> = {
   GAME_NOT_ACTIVE: 409,
   NOT_CATCHER: 403,
   INVALID_TAG: 400,
+  ALREADY_IN_GAME: 409,
 };
 
 export class GameError extends Error {

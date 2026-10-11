@@ -29,6 +29,9 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
     <main className="screen home">
       <h1>GPS Tag</h1>
       <p className="lede">Infection tag for your phone. Catchers scan runners’ QR codes; every catch joins the hunt.</p>
+      <p className="fine-print">
+        GPS is foreground-only. The game stores your latest fix, not your route, and clears it when the round ends.
+      </p>
 
       <form onSubmit={submit} className="stack">
         <label>

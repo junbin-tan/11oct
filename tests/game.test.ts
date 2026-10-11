@@ -110,6 +110,31 @@ describe('create, join and start', () => {
     expect(started.body.state.game.started_at).toBe(clock);
   });
 
+  it('keeps a live membership until that game ends or expires', async () => {
+    const first = await createRoom(['Alice', 'Bob']);
+    const other = await createRoom(['Cara']);
+    const blockedCreate = await first.host.call('POST', '/api/games', { name: 'Alice' });
+    const blockedJoin = await first.host.call('POST', '/api/games/join', { code: other.code, name: 'Alice' });
+    expect(blockedCreate.body.error).toBe('ALREADY_IN_GAME');
+    expect(blockedJoin.body.error).toBe('ALREADY_IN_GAME');
+    expect((await first.host.state()).game.code).toBe(first.code);
+    expect((await other.host.state()).players).toHaveLength(1);
+
+    expect((await first.host.call('POST', '/api/game/start')).status).toBe(200);
+    expect((await first.host.call('POST', '/api/game/end')).status).toBe(200);
+    const replaced = await first.host.call('POST', '/api/games/join', { code: other.code, name: 'Alice' });
+    expect(replaced.status).toBe(200);
+    expect(replaced.body.state.game.code).toBe(other.code);
+    expect(replaced.body.state.players.map((p: { name: string }) => p.name).sort()).toEqual(['Alice', 'Cara']);
+
+    const expired = new Client();
+    await expired.call('POST', '/api/games', { name: 'Expired' });
+    db.prepare('DELETE FROM games WHERE code != ?').run(other.code);
+    const renewed = await expired.call('POST', '/api/games', { name: 'Expired' });
+    expect(renewed.status).toBe(200);
+    expect(renewed.body.state.me.name).toBe('Expired');
+  });
+
   it('rejects joining after the game has started or ended', async () => {
     const { host, code } = await createRoom(['Alice', 'Bob'], true);
     const late = new Client();
