@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ExitButton } from '../components/ExitButton';
+import { GameCharacter } from '../components/GameCharacter';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { UiIcon } from '../components/UiIcon';
 import type { GpsStatus as Status } from '../hooks/useGeolocation';
@@ -41,35 +42,40 @@ export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart
       <header className="screen-bar">
         <div>
           <p className="eyebrow">GPS Tag</p>
-          <h1>Game lobby</h1>
+          <h1>Round up the crew.</h1>
         </div>
         <div className="screen-bar-actions">
-          <span className="stage-pill">Waiting</span>
+          <span className="stage-pill">Lobby</span>
           <ExitButton phase="lobby" isHost={me.is_host} busy={busy} onExit={onExit} />
         </div>
       </header>
 
-      <section className="invite-card" aria-labelledby="room-code-label">
+      <section className="invite-card invite-ticket" aria-labelledby="room-code-label">
+        <GameCharacter role="runner" className="ticket-character" />
         <div className="invite-card-copy">
           <p className="eyebrow" id="room-code-label">Room code</p>
           <p className="room-code">{game.code}</p>
-          <p>Bring your players in, then start the chase.</p>
+          <p className="ticket-caption">Share this room code. Bring your fastest friends.</p>
         </div>
-        <button className="icon-button share-button" onClick={copyInvite} aria-label="Share invite link">
-          <UiIcon name="share" size={22} />
-        </button>
-        <div className="avatar-stack" aria-hidden="true">
-          {players.slice(0, 5).map((player) => (
-            <PlayerAvatar key={player.id} name={player.name} role={player.role} small />
-          ))}
-          {players.length > 5 && <span className="avatar-more">+{players.length - 5}</span>}
+        <div className="ticket-stub">
+          <div className="avatar-stack" aria-hidden="true">
+            {players.slice(0, 4).map((player) => (
+              <PlayerAvatar key={player.id} name={player.name} role={player.role} small />
+            ))}
+            {players.length > 4 && <span className="avatar-more">+{players.length - 4}</span>}
+          </div>
+          <div className="ticket-invite">
+            <span className="share-feedback" role="status">{copied ? 'Invite ready!' : 'Invite crew'}</span>
+            <button className="icon-button share-button" onClick={copyInvite} aria-label="Share invite link">
+              <UiIcon name="share" size={20} />
+            </button>
+          </div>
         </div>
-        <span className="share-feedback" role="status">{copied ? 'Invite ready!' : 'Tap to invite'}</span>
       </section>
 
       <div className="section-heading">
         <div>
-          <p className="eyebrow">The party</p>
+          <p className="eyebrow">The starting lineup</p>
           <h2>Players</h2>
         </div>
         <span className="count-pill"><UiIcon name="users" size={15} />{players.length}</span>
@@ -80,22 +86,23 @@ export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart
             <PlayerAvatar name={p.name} role={p.role} />
             <span className="player-copy">
               <strong>{p.name}{p.id === me.player_id ? ' (you)' : ''}</strong>
-              <span>{p.is_host ? 'First Catcher' : 'Runner'}</span>
+              <span>{p.is_host ? 'First Catcher' : 'Runner'}{p.is_host && <span className="host-badge">Host</span>}</span>
             </span>
             <span className={`readiness ${p.gps_ready ? 'ready' : ''}`} title={p.gps_ready ? 'GPS ready' : 'No GPS yet'}>
-              <span aria-hidden />{p.gps_ready ? 'Ready' : 'No GPS'}
+              <span aria-hidden />{p.gps_ready ? 'GPS ready' : 'No GPS yet'}
             </span>
           </li>
         ))}
       </ul>
 
       <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />
+      <p className="lobby-instruction">The host starts as Catcher. Everyone else runs!</p>
 
       <div className="action-dock">
         {me.is_host ? (
           <button className="btn primary dock-action" disabled={busy || players.length < 2} onClick={onStart}>
             <UiIcon name="play" />
-            {players.length < 2 ? 'Waiting for players…' : 'Start game'}
+            {players.length < 2 ? 'Invite one more to play' : 'Start the chase'}
           </button>
         ) : (
           <p className="waiting-dock"><span className="status-pulse" aria-hidden />Waiting for the host to start…</p>

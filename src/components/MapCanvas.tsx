@@ -71,7 +71,7 @@ export function MapCanvas({ points }: { points: MapPlayer[] }) {
     }
     for (const point of points) {
       const position: L.LatLngTuple = [point.lat, point.lng];
-      const color = point.isMe ? '#2563eb' : point.role === 'runner' ? '#087f5b' : '#c02657';
+      const color = point.role === 'runner' ? '#2563eb' : '#dc2626';
       const style = `${point.role}${point.isMe ? ' me' : ''}${point.aging ? ' aging' : ''}`;
       let entry = markersRef.current.get(point.player_id);
       if (!entry) {

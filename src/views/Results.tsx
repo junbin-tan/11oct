@@ -1,3 +1,4 @@
+import { GameCharacter } from '../components/GameCharacter';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { UiIcon } from '../components/UiIcon';
 import { formatDuration } from '../hooks/useNow';
@@ -23,9 +24,10 @@ export function Results({ state, onNewGame, busy }: ResultsProps) {
   return (
     <main className="screen results has-action-dock">
       <header className={`results-hero ${departureEnding ? 'departure-ending' : survivors.length === 0 ? 'catchers-win' : 'runners-survive'}`}>
-        <div className="confetti" aria-hidden><i /><i /><i /><i /><i /></div>
-        <p className="eyebrow">Game over</p>
-        <h1>{departureEnding ? 'Game ended' : survivors.length === 0 ? (caughtAll ? 'Caught them all!' : 'No runners remaining') : 'Still running!'}</h1>
+        {!departureEnding && <div className="confetti" aria-hidden><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>}
+        <p className="eyebrow round-complete">{departureEnding ? 'Chase ended' : 'Round complete'}</p>
+        <GameCharacter role={survivors.length === 0 ? 'catcher' : 'runner'} className="results-character" celebratory={!departureEnding} />
+        <h1 className="results-title">{departureEnding ? 'Game ended' : survivors.length === 0 ? (caughtAll ? 'Caught them all!' : 'No runners remaining') : 'Still running!'}</h1>
         <p>
           {game.end_reason === 'host_left'
             ? 'The host left the game.'
@@ -43,15 +45,16 @@ export function Results({ state, onNewGame, busy }: ResultsProps) {
         <span><strong>{survivors.length}</strong><small>{survivors.length === 1 ? 'Survivor' : 'Survivors'}</small></span>
       </div>
 
-      <div className="section-heading">
+      <div className="section-heading scoreboard-heading">
         <div>
           <p className="eyebrow">Final standings</p>
-          <h2>Players</h2>
+          <h2>The scoreboard</h2>
         </div>
+        <span className="count-pill"><UiIcon name="users" size={15} />{players.length}</span>
       </div>
       <ol className="roster player-roster results-roster">
         {ranked.map((p, index) => (
-          <li key={p.id} className={`player-row ${p.role}`}>
+          <li key={p.id} className={`player-row ${p.role}${index === 0 ? ' top-score' : ''}`}>
             <span className="rank-number" aria-hidden>{index + 1}</span>
             <PlayerAvatar name={p.name} role={p.role} />
             <span className="player-copy">

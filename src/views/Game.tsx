@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { ExitButton } from '../components/ExitButton';
+import { GameCharacter } from '../components/GameCharacter';
 import { GameMap } from '../components/GameMap';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { PlayerQr } from '../components/PlayerQr';
@@ -34,6 +35,9 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
   const isCatcher = me.role === 'catcher';
   const catchers = players.filter((p) => p.role === 'catcher').length;
   const runners = players.length - catchers;
+  const runnerShare = players.length > 0 ? (runners / players.length) * 100 : 0;
+  const catcherShare = players.length > 0 ? (catchers / players.length) * 100 : 0;
+  const gpsNeedsAttention = gpsStatus !== 'active' && gpsStatus !== 'sharing' && gpsStatus !== 'requesting';
 
   const handleTag = async (input: { payload: string } | { code: string }) => {
     const error = await onTag(input);
@@ -47,31 +51,39 @@ export function Game({ state, radar, radarReconnecting, visible = true, nowMs, g
         <p className="eyebrow">Room {game.code}</p>
         <ExitButton phase="game" isHost={me.is_host} busy={busy} onExit={onExit} />
       </div>
-      <header className={`role-hero ${me.role}`}>
-        <div className="role-symbol" aria-hidden><span /></div>
-        <div className="role-copy">
-          <p className="eyebrow">You are a</p>
-          <h1 className="role-label">{isCatcher ? 'Catcher' : 'Runner'}</h1>
-          <p className="role-hint">{isCatcher ? 'Find a Runner and scan their code.' : 'Keep moving. Don’t get scanned.'}</p>
+      <section className="game-hud" aria-label="Your role and game status">
+        <header key={me.role} className={`role-hero ${me.role}`}>
+          <GameCharacter role={me.role} className="role-character" />
+          <div className="role-copy">
+            <p className="eyebrow">You are a</p>
+            <h1 className="role-label">{isCatcher ? 'Catcher' : 'Runner'}</h1>
+            <p className="role-hint">{isCatcher ? 'Find a Runner. Scan. Got ’em!' : 'Keep moving. Don’t get scanned.'}</p>
+          </div>
+        </header>
+
+        <div className="metric-strip" aria-label="Game status">
+          <span className="runner-metric"><strong>{runners}</strong><small>{runners === 1 ? 'Runner' : 'Runners'}</small></span>
+          <span className="catcher-metric"><strong>{catchers}</strong><small>{catchers === 1 ? 'Catcher' : 'Catchers'}</small></span>
+          <span><strong>{formatDuration(nowMs - (game.started_at ?? nowMs))}</strong><small>Elapsed</small></span>
         </div>
-      </header>
+        <div className="team-balance" aria-hidden="true">
+          <span className="runner-segment" style={{ width: `${runnerShare}%` }} />
+          <span className="catcher-segment" style={{ width: `${catcherShare}%` }} />
+        </div>
+      </section>
 
-      <div className="metric-strip" aria-label="Game status">
-        <span><strong>{runners}</strong><small>{runners === 1 ? 'Runner' : 'Runners'}</small></span>
-        <span><strong>{catchers}</strong><small>{catchers === 1 ? 'Catcher' : 'Catchers'}</small></span>
-        <span><strong>{formatDuration(nowMs - (game.started_at ?? nowMs))}</strong><small>Elapsed</small></span>
-      </div>
-
-      <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />
+      {gpsNeedsAttention && <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />}
 
       <Radar radar={radar} players={players} nowMs={nowMs} reconnecting={radarReconnecting} />
+
+      {!gpsNeedsAttention && <GpsStatus status={gpsStatus} onEnable={onEnableGps} onResetGps={onResetGps} />}
 
       {events.length > 0 && (
         <section className="activity-section">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Live updates</p>
-              <h2>Recent tags</h2>
+              <h2>Got ’em!</h2>
             </div>
           </div>
           <ul className="feed">

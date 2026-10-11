@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { ChaseScene } from '../components/ChaseScene';
 
 const NAME_KEY = 'gps-tag:name';
 
@@ -28,15 +29,15 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
   return (
     <main className="screen home">
       <header className="home-hero">
-        <div className="game-mark" aria-hidden>
-          <span className="game-mark-ring ring-one" />
-          <span className="game-mark-ring ring-two" />
-          <span className="game-mark-player runner" />
-          <span className="game-mark-player catcher" />
-        </div>
-        <p className="eyebrow">Run · Scan · Recruit</p>
-        <h1>GPS Tag</h1>
-        <p className="lede">The real-world chase game where every catch grows the hunting team.</p>
+        <p className="eyebrow home-kicker"><span aria-hidden="true">✳</span> Your playground. Your people.</p>
+        <h1 className="arcade-wordmark"><span>GPS</span> <span>TAG</span></h1>
+        <p className="lede">Big chase energy. In real life.</p>
+        <ChaseScene />
+        <ol className="how-to-play" aria-label="How to play">
+          <li><span className="rule-number">1</span><span className="rule-copy"><strong>Team up</strong><span>Invite friends</span></span></li>
+          <li><span className="rule-number">2</span><span className="rule-copy"><strong>Chase</strong><span>Scan a Runner</span></span></li>
+          <li><span className="rule-number">3</span><span className="rule-copy"><strong>Recruit</strong><span>Grow your team</span></span></li>
+        </ol>
       </header>
 
       <form onSubmit={submit} className="join-card stack">
@@ -62,7 +63,7 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
         </div>
 
         <div className="form-intro">
-          <h2>{mode === 'create' ? 'Start a new chase' : 'Join the chase'}</h2>
+          <h2>{mode === 'create' ? 'Start some chaos.' : 'Your crew is waiting.'}</h2>
           <p>{mode === 'create' ? 'You’ll begin as the first Catcher.' : 'Enter the code your host shared.'}</p>
         </div>
 
@@ -93,8 +94,9 @@ export function Home({ initialCode, busy, onCreate, onJoin }: HomeProps) {
           </label>
         )}
 
-        <button className="btn primary" disabled={!canSubmit}>
+        <button className="btn primary home-submit" disabled={!canSubmit}>
           {busy ? 'Please wait…' : mode === 'create' ? 'Create game' : 'Join game'}
+          {!busy && <span aria-hidden="true">↗</span>}
         </button>
       </form>
 

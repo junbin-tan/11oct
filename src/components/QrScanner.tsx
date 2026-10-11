@@ -118,8 +118,8 @@ export function QrScanner({ onSubmit, onClose }: QrScannerProps) {
         </div>
 
         <div className="scanner-copy">
-          <h2>Line up their QR code</h2>
-          <p>Hold steady—the tag happens automatically.</p>
+          <h2>{cameraError ? 'Their code. Your next catch.' : 'Line up their QR code'}</h2>
+          <p>{cameraError ? 'Ask the Runner for their six-character tag code.' : 'Hold steady—the tag happens automatically.'}</p>
         </div>
 
         {!showManual && (
