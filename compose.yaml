@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      COOKIE_SECRET: ${COOKIE_SECRET:-local-compose-cookie-secret-change-me-0000}
+      COOKIE_SECURE: "false"
+    volumes:
+      - game-data:/data
+
+volumes:
+  game-data:
