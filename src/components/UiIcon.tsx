@@ -1,10 +1,11 @@
 interface UiIconProps {
-  name: 'close' | 'location' | 'play' | 'qr' | 'scan' | 'share' | 'users';
+  name: 'close' | 'location' | 'map' | 'play' | 'qr' | 'scan' | 'share' | 'users';
   size?: number;
 }
 
 export function UiIcon({ name, size = 20 }: UiIconProps) {
   const paths = {
+    map: <><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6ZM9 3v15M15 6v15" /></>,
     close: <><path d="M6 6l12 12M18 6 6 18" /></>,
     location: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
     play: <path d="m9 7 8 5-8 5V7Z" />,

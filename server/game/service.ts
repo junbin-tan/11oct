@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Db } from '../db.js';
 import { GameError } from '../errors.js';
 import { newId, normalizeCode, randomCode, randomToken } from './codes.js';
+import { buildMapSnapshot, type MapResponse } from './map.js';
 import { buildSnapshot, hasRecentLocation, isFresh, FIX_MAX_AGE_MS, RADAR_INTERVAL_MS, type RadarSnapshot } from './radar.js';
 
 export const MAX_PLAYERS = 30;
@@ -20,6 +21,7 @@ interface GameRow {
   created_at: number;
   started_at: number | null;
   ended_at: number | null;
+  end_reason: 'host_left' | 'players_left' | null;
 }
 
 interface PlayerRow {
@@ -29,6 +31,7 @@ interface PlayerRow {
   role: Role;
   joined_at: number;
   caught_at: number | null;
+  left_at: number | null;
   tag_token: string;
   tag_code: string;
   latitude: number | null;
@@ -57,6 +60,7 @@ export interface GameState {
     created_at: number;
     started_at: number | null;
     ended_at: number | null;
+  end_reason: 'host_left' | 'players_left' | null;
   };
   players: Array<{
     id: string;
@@ -66,6 +70,7 @@ export interface GameState {
     gps_ready: boolean;
     tag_count: number;
     caught_at: number | null;
+  left_at: number | null;
   }>;
   events: Array<{
     id: string;
@@ -171,7 +176,7 @@ export class GameService {
       if (game.status === 'ended') throw new GameError('ROOM_ENDED', 'That game has ended.');
 
       const { count } = this.db
-        .prepare(`SELECT COUNT(*) AS count FROM players WHERE game_id = ?`)
+        .prepare(`SELECT COUNT(*) AS count FROM players WHERE game_id = ? AND left_at IS NULL`)
         .get(game.id) as { count: number };
       if (count >= MAX_PLAYERS) throw new GameError('ROOM_FULL', 'That game is full.');
 
@@ -188,8 +193,8 @@ export class GameService {
     const now = this.now();
 
     const players = this.db
-      .prepare(`SELECT * FROM players WHERE game_id = ? ORDER BY joined_at, rowid`)
-      .all(game.id) as PlayerRow[];
+      .prepare(`SELECT * FROM players WHERE game_id = ? AND (? = 'ended' OR left_at IS NULL) ORDER BY joined_at, rowid`)
+      .all(game.id, game.status) as PlayerRow[];
     const tagCounts = new Map(
       (
         this.db
@@ -229,6 +234,7 @@ export class GameService {
         created_at: game.created_at,
         started_at: game.started_at,
         ended_at: game.ended_at,
+        end_reason: game.end_reason,
       },
       players: players.map((p) => ({
         id: p.id,
@@ -238,6 +244,7 @@ export class GameService {
         gps_ready: isFresh(p, now),
         tag_count: tagCounts.get(p.id) ?? 0,
         caught_at: p.caught_at,
+        left_at: p.left_at,
       })),
       events,
     };
@@ -248,7 +255,7 @@ export class GameService {
       const { game } = this.requireHost(playerId);
       if (game.status !== 'waiting') throw new GameError('ROOM_STARTED', 'The game has already started.');
       const { count } = this.db
-        .prepare(`SELECT COUNT(*) AS count FROM players WHERE game_id = ?`)
+        .prepare(`SELECT COUNT(*) AS count FROM players WHERE game_id = ? AND left_at IS NULL`)
         .get(game.id) as { count: number };
       if (count < 2) throw new GameError('NOT_ENOUGH_PLAYERS', 'You need at least two players.');
 
@@ -271,6 +278,34 @@ export class GameService {
       const { game } = this.requireHost(playerId);
       if (game.status !== 'active') throw new GameError('GAME_NOT_ACTIVE', 'The game is not running.');
       this.finishGame(game.id);
+    })();
+  }
+
+  leaveGame(playerId: string | null): void {
+    if (!playerId) return;
+    this.db.transaction(() => {
+      const me = this.findPlayer(playerId);
+      if (!me) return;
+      const game = this.getGame(me.game_id);
+      // Finished rounds are immutable: leaving results only clears the browser cookie.
+      if (game.status === 'ended') return;
+      if (game.status === 'waiting') {
+        if (game.host_player_id === me.id) this.db.prepare('DELETE FROM games WHERE id = ?').run(game.id);
+        else this.db.prepare('DELETE FROM players WHERE id = ?').run(me.id);
+        return;
+      }
+      this.db.prepare(`UPDATE players SET left_at = ?, latitude = NULL, longitude = NULL,
+        accuracy_m = NULL, location_at = NULL, captured_at = NULL WHERE id = ?`).run(this.now(), me.id);
+      this.db.prepare('UPDATE players SET radar_snapshot = NULL, radar_at = NULL WHERE game_id = ?').run(game.id);
+      if (game.host_player_id === me.id) {
+        this.finishGame(game.id, 'host_left');
+        return;
+      }
+      const remaining = this.db.prepare(`SELECT role, COUNT(*) AS count FROM players
+        WHERE game_id = ? AND left_at IS NULL GROUP BY role`).all(game.id) as Array<{ role: Role; count: number }>;
+      if (!remaining.some((p) => p.role === 'runner') || !remaining.some((p) => p.role === 'catcher')) {
+        this.finishGame(game.id, 'players_left');
+      }
     })();
   }
 
@@ -323,6 +358,17 @@ export class GameService {
     })();
   }
 
+  getMap(playerId: string): MapResponse {
+    return this.db.transaction(() => {
+      const me = this.requirePlayer(playerId);
+      const game = this.getGame(me.game_id);
+      if (game.status !== 'active') throw new GameError('GAME_NOT_ACTIVE', 'The game is not running.');
+      const players = this.db.prepare('SELECT * FROM players WHERE game_id = ? AND left_at IS NULL')
+        .all(game.id) as PlayerRow[];
+      return buildMapSnapshot(players, this.now());
+    })();
+  }
+
   getRadar(playerId: string): RadarResponse {
     return this.db.transaction((): RadarResponse => {
       const me = this.requirePlayer(playerId);
@@ -341,7 +387,7 @@ export class GameService {
       }
 
       const others = this.db
-        .prepare(`SELECT * FROM players WHERE game_id = ? AND id != ?`)
+        .prepare(`SELECT * FROM players WHERE game_id = ? AND left_at IS NULL AND id != ?`)
         .all(game.id, me.id) as PlayerRow[];
 
       if (me.latitude === null || me.longitude === null || me.location_at === null || !hasRecentLocation(me, now)) {
@@ -404,7 +450,7 @@ export class GameService {
         .run(newId(), game.id, me.id, target.id, now);
 
       const { runners } = this.db
-        .prepare(`SELECT COUNT(*) AS runners FROM players WHERE game_id = ? AND role = 'runner'`)
+        .prepare(`SELECT COUNT(*) AS runners FROM players WHERE game_id = ? AND role = 'runner' AND left_at IS NULL`)
         .get(game.id) as { runners: number };
       if (runners === 0) this.finishGame(game.id);
 
@@ -439,7 +485,7 @@ export class GameService {
       const [, roomCode, targetId, token] = parts as [string, string, string, string];
       if (roomCode !== game.code) throw new GameError('INVALID_TAG', 'That QR belongs to another game.');
       const target = this.db
-        .prepare(`SELECT * FROM players WHERE id = ? AND game_id = ?`)
+        .prepare(`SELECT * FROM players WHERE id = ? AND game_id = ? AND left_at IS NULL`)
         .get(targetId, game.id) as PlayerRow | undefined;
       if (!target || !safeEqual(target.tag_token, token)) {
         throw new GameError('INVALID_TAG', 'That QR code is not valid.');
@@ -450,16 +496,16 @@ export class GameService {
     const code = normalizeCode(input.code);
     if (!code) throw new GameError('INVALID_INPUT', 'Tag codes are 6 characters.');
     const target = this.db
-      .prepare(`SELECT * FROM players WHERE game_id = ? AND tag_code = ?`)
+      .prepare(`SELECT * FROM players WHERE game_id = ? AND tag_code = ? AND left_at IS NULL`)
       .get(game.id, code) as PlayerRow | undefined;
     if (!target) throw new GameError('INVALID_TAG', 'No player with that tag code.');
     return target;
   }
 
-  private finishGame(gameId: string): void {
+  private finishGame(gameId: string, reason: GameRow['end_reason'] = null): void {
     this.db
-      .prepare(`UPDATE games SET status = 'ended', ended_at = ? WHERE id = ?`)
-      .run(this.now(), gameId);
+      .prepare(`UPDATE games SET status = 'ended', ended_at = ?, end_reason = ? WHERE id = ?`)
+      .run(this.now(), reason, gameId);
     this.db
       .prepare(
         `UPDATE players
@@ -503,13 +549,13 @@ export class GameService {
     if (current.status !== 'ended') {
       throw new GameError(
         'ALREADY_IN_GAME',
-        'Finish your current game before starting or joining another.',
+        'Exit your current room or finish the game before starting or joining another.',
       );
     }
   }
 
   private findPlayer(playerId: string): PlayerRow | undefined {
-    return this.db.prepare(`SELECT * FROM players WHERE id = ?`).get(playerId) as PlayerRow | undefined;
+    return this.db.prepare(`SELECT * FROM players WHERE id = ? AND left_at IS NULL`).get(playerId) as PlayerRow | undefined;
   }
 
   private requirePlayer(playerId: string): PlayerRow {

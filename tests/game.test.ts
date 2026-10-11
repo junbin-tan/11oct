@@ -153,6 +153,137 @@ describe('create, join and start', () => {
   });
 });
 
+describe('leaving rooms and games', () => {
+  it('removes a waiting guest, allows rejoining with a new membership, and updates start eligibility', async () => {
+    const { host, others, code } = await createRoom(['Alice', 'Bob']);
+    const bob = others[0]!;
+    const before = await bob.state();
+    const stale = new Client();
+    stale.cookie = bob.cookie;
+    expect((await bob.call('POST', '/api/game/leave')).body).toEqual({ state: null });
+    expect(bob.cookie).toBe('gps_tag_player=');
+    expect(await bob.state()).toBeNull();
+    expect(await stale.state()).toBeNull();
+    expect((await host.state()).players).toHaveLength(1);
+    expect((await host.call('POST', '/api/game/start')).body.error).toBe('NOT_ENOUGH_PLAYERS');
+    const rejoined = await bob.call('POST', '/api/games/join', { code, name: 'Bob' });
+    expect(rejoined.status).toBe(200);
+    expect(rejoined.body.state.me.player_id).not.toBe(before.me.player_id);
+  });
+
+  it('frees a full lobby slot', async () => {
+    const { others, code } = await createRoom(Array.from({ length: 30 }, (_, i) => `Player ${i}`));
+    const next = new Client();
+    expect((await next.call('POST', '/api/games/join', { code, name: 'Next' })).body.error).toBe('ROOM_FULL');
+    await others[0]!.call('POST', '/api/game/leave');
+    expect((await next.call('POST', '/api/games/join', { code, name: 'Next' })).status).toBe(200);
+  });
+
+  it.each([['Alice'], ['Alice', 'Bob']])('closes a waiting room when its host exits (%s)', async (...names) => {
+    const { host, others, code } = await createRoom(names);
+    await host.call('POST', '/api/game/leave');
+    expect(await host.state()).toBeNull();
+    for (const guest of others) expect(await guest.state()).toBeNull();
+    expect(db.prepare('SELECT id FROM games WHERE code = ?').get(code)).toBeUndefined();
+    expect((await new Client().call('POST', '/api/games/join', { code, name: 'Late' })).body.error).toBe('ROOM_NOT_FOUND');
+  });
+
+  it('removes a departing active player from radar and tagging without losing scores or history', async () => {
+    const { host, others, code } = await createRoom(['Alice', 'Bob', 'Cara', 'Dee'], true);
+    const [bob, cara, dee] = others as [Client, Client, Client];
+    const bobState = await bob.state();
+    const caraState = await cara.state();
+    await host.call('POST', '/api/game/tag', { code: bobState.me.tag_code });
+    await bob.call('POST', '/api/game/tag', { code: caraState.me.tag_code });
+    await host.location(1.3, 103.8);
+    await bob.location(1.301, 103.8);
+    const radarBefore = await host.call('GET', '/api/game/radar');
+    expect(radarBefore.body.points.some((p: { player_id: string }) => p.player_id === bobState.me.player_id)).toBe(true);
+    const stale = new Client();
+    stale.cookie = bob.cookie;
+    await bob.call('POST', '/api/game/leave');
+    const live = await host.state();
+    expect(live.game.status).toBe('active');
+    expect(live.players.map((p: { name: string }) => p.name)).toEqual(['Alice', 'Cara', 'Dee']);
+    expect(live.events).toHaveLength(2);
+    expect(db.prepare('SELECT left_at, latitude, radar_snapshot FROM players WHERE id = ?').get(bobState.me.player_id))
+      .toEqual({ left_at: clock, latitude: null, radar_snapshot: null });
+    const radarAfter = await host.call('GET', '/api/game/radar');
+    expect(radarAfter.body.points.some((p: { player_id: string }) => p.player_id === bobState.me.player_id)).toBe(false);
+    expect(radarAfter.body.missing_gps_count).toBe(2);
+    expect((await stale.location(1.3, 103.8)).status).toBe(401);
+    expect((await stale.call('GET', '/api/game/radar')).status).toBe(401);
+    expect((await stale.call('POST', '/api/game/tag', { code: (await dee.state()).me.tag_code })).status).toBe(401);
+    expect(await stale.state()).toBeNull();
+    for (const input of [{ code: bobState.me.tag_code }, { payload: bobState.me.qr_payload }]) {
+      expect((await host.call('POST', '/api/game/tag', input)).body.error).toBe('INVALID_TAG');
+    }
+    expect((await bob.call('POST', '/api/games/join', { code, name: 'Bob' })).body.error).toBe('ROOM_STARTED');
+    const otherRoom = await createRoom(['Eve']);
+    expect((await bob.call('POST', '/api/games/join', { code: otherRoom.code, name: 'Bob' })).status).toBe(200);
+    await host.call('POST', '/api/game/end');
+    const results = await host.state();
+    expect(results.players.find((p: { name: string }) => p.name === 'Bob')).toMatchObject({ tag_count: 1, left_at: clock });
+    expect(results.players.find((p: { name: string }) => p.name === 'Alice').tag_count).toBe(1);
+    expect(results.events).toHaveLength(2);
+  });
+
+  it('ends play when the last runner leaves, without inventing a catch', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    await others[0]!.call('POST', '/api/game/leave');
+    const state = await host.state();
+    expect(state.game).toMatchObject({ status: 'ended', end_reason: 'players_left' });
+    expect(state.events).toEqual([]);
+    expect(state.players[1]).toMatchObject({ role: 'runner', left_at: clock });
+  });
+
+  it('ends play when the host leaves and clears every location and radar cache', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob', 'Cara'], true);
+    await host.location(1.3, 103.8);
+    await others[0]!.location(1.301, 103.8);
+    await host.call('GET', '/api/game/radar');
+    await host.call('POST', '/api/game/leave');
+    expect(await host.state()).toBeNull();
+    const results = await others[0]!.state();
+    expect(results.game).toMatchObject({ status: 'ended', end_reason: 'host_left', ended_at: clock });
+    expect(results.players[0]).toMatchObject({ name: 'Alice', left_at: clock });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM players WHERE latitude IS NOT NULL OR radar_snapshot IS NOT NULL').get()).toEqual({ n: 0 });
+  });
+
+  it('excludes earlier withdrawals when the final remaining runner is caught', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob', 'Cara'], true);
+    await others[0]!.call('POST', '/api/game/leave');
+    expect((await host.state()).game.status).toBe('active');
+    await host.call('POST', '/api/game/tag', { code: (await others[1]!.state()).me.tag_code });
+    expect((await host.state()).game.status).toBe('ended');
+  });
+
+  it('leaves finished results unchanged when someone returns home', async () => {
+    const { host, others } = await createRoom(['Alice', 'Bob'], true);
+    await host.call('POST', '/api/game/end');
+    const before = await others[0]!.state();
+    await host.call('POST', '/api/game/leave');
+    expect(await host.state()).toBeNull();
+    expect(await others[0]!.state()).toEqual(before);
+    expect((await host.call('POST', '/api/games', { name: 'Alice' })).status).toBe(200);
+  });
+
+  it('accepts repeated, missing, forged and expired sessions and clears the cookie', async () => {
+    const { host } = await createRoom(['Alice']);
+    const stale = new Client();
+    stale.cookie = host.cookie;
+    await host.call('POST', '/api/game/leave');
+    const forged = new Client();
+    forged.cookie = 'gps_tag_player=forged';
+    for (const client of [host, stale, forged, new Client()]) {
+      const response = await client.call('POST', '/api/game/leave');
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ state: null });
+      expect(client.cookie).toBe('gps_tag_player=');
+    }
+  });
+});
+
 describe('safe responses', () => {
   it('never exposes other players’ coordinates or tag credentials', async () => {
     const { host, others } = await createRoom(['Alice', 'Bob'], true);

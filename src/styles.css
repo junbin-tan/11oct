@@ -1791,3 +1791,72 @@ dialog.modal-fullscreen {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Keep leaving available above the main play controls, including narrow phones. */
+.screen-bar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.exit-button {
+  flex-shrink: 0;
+  width: auto;
+  min-height: 44px;
+  padding: 10px 14px;
+}
+.game-exit-bar { margin-bottom: 16px; }
+.exit-confirmation { padding: 24px; }
+.exit-confirmation h2 { margin: 0 0 16px; }
+.exit-confirmation p { margin: 0 0 16px; }
+.exit-dialog-actions { display: flex; gap: 12px; margin-top: 24px; }
+.exit-dialog-actions .btn { flex: 1; }
+.exit-error { color: var(--danger, #a32323); }
+
+/* Full game street map */
+.role-dock {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+}
+.dock-map-action { min-height: 56px; border-radius: 18px; padding-inline: 18px; }
+dialog.modal-map {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  background: var(--bg);
+  overflow: hidden;
+}
+.map-shell { display: flex; flex-direction: column; height: 100%; }
+.map-shell .modal-topbar { flex: none; }
+.map-summary { padding: 0 18px 12px; flex: none; }
+.map-summary-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-size: .8rem; }
+.map-legend-me { width: 10px; height: 10px; border-radius: 50%; background: #2563eb; border: 2px solid white; }
+.map-status { font-size: .74rem; color: var(--muted-strong); margin: 6px 0 0; }
+.map-summary .gps { margin-bottom: 0; }
+.map-stage { position: relative; flex: 1; min-height: 140px; isolation: isolate; background: #e9e8e1; }
+.street-map { position: absolute; inset: 0; font-family: inherit; }
+.map-controls { position: absolute; z-index: 800; top: 14px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 9px; }
+.map-controls button, .map-tile-error button {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 44px; padding: 10px 13px; border: 1px solid #c7c8cc; border-radius: 12px;
+  background: #fff; color: #252334; font-family: inherit; font-size: .78rem; font-weight: 700; cursor: pointer;
+  box-shadow: 0 2px 8px #0002;
+}
+.map-controls button:disabled { opacity: .55; cursor: default; }
+.map-zoom-controls { display: flex; gap: 6px; }
+.map-zoom-controls button { width: 44px; padding: 0; font-size: 1.4rem; }
+.map-controls button:focus-visible, .map-tile-error button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.map-footer { flex: none; max-height: 20dvh; overflow: auto; padding: 10px 18px max(10px, env(safe-area-inset-bottom)); color: var(--muted-strong); font-size: .7rem; }
+.map-footer p { margin: 0; }
+.map-footer p + p { margin-top: 5px; }
+.map-player > span { display: block; width: 24px; height: 24px; border: 3px solid #fff; border-radius: 50%; background: #087f5b; box-shadow: 0 1px 7px #0007; }
+.map-player.catcher > span { background: #c02657; border-radius: 5px; transform: rotate(45deg); }
+.map-player.me > span { background: #2563eb; border-radius: 50%; transform: none; box-shadow: 0 0 0 3px #2563eb50, 0 1px 7px #0007; }
+.map-player-label { font-family: inherit; font-size: 11px; font-weight: 700; color: #252334; border-radius: 6px; }
+.map-waiting, .map-empty { position: absolute; z-index: 790; top: 50%; left: 50%; transform: translate(-50%, -50%); width: max-content; max-width: calc(100% - 32px); padding: 12px 16px; border-radius: 12px; background: #fff; color: #252334; box-shadow: 0 2px 12px #0002; text-align: center; font-size: .85rem; pointer-events: none; }
+.map-tile-error { position: absolute; z-index: 800; bottom: 32px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: #fff5d9; color: #50370b; border-radius: 12px; font-size: .78rem; }

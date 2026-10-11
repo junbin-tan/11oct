@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS games (
   host_player_id TEXT,
   created_at INTEGER NOT NULL,
   started_at INTEGER,
-  ended_at INTEGER
+  ended_at INTEGER,
+  end_reason TEXT CHECK (end_reason IN ('host_left', 'players_left'))
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -15,6 +16,7 @@ CREATE TABLE IF NOT EXISTS players (
   role TEXT NOT NULL CHECK (role IN ('runner', 'catcher')),
   joined_at INTEGER NOT NULL,
   caught_at INTEGER,
+  left_at INTEGER,
   tag_token TEXT NOT NULL,
   tag_code TEXT NOT NULL,
   latitude REAL CHECK (latitude BETWEEN -90 AND 90),

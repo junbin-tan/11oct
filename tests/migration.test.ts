@@ -11,7 +11,9 @@ it('upgrades an existing database, invalidates old radar, and is idempotent', ()
   try {
     const old = new Database(file);
     const schema = fs.readFileSync(new URL('../server/schema.sql', import.meta.url), 'utf8')
-      .replace('  captured_at INTEGER,\n', '');
+      .replace('  captured_at INTEGER,\n', '')
+      .replace('  left_at INTEGER,\n', '')
+      .replace("  ended_at INTEGER,\n  end_reason TEXT CHECK (end_reason IN ('host_left', 'players_left'))", '  ended_at INTEGER');
     old.exec(schema);
     old.prepare('INSERT INTO games (id, code, created_at) VALUES (?, ?, ?)').run('g', 'ABCDEF', 1000);
     old.prepare(`INSERT INTO players
@@ -22,11 +24,17 @@ it('upgrades an existing database, invalidates old radar, and is idempotent', ()
     const migrated = openDb(file);
     expect(migrated.prepare('SELECT captured_at, location_at, latitude, radar_snapshot, radar_at FROM players').get())
       .toEqual({ captured_at: null, location_at: 2000, latitude: 1.3, radar_snapshot: null, radar_at: null });
+    expect(migrated.prepare('SELECT left_at FROM players').get()).toEqual({ left_at: null });
+    expect(migrated.prepare('SELECT end_reason FROM games').get()).toEqual({ end_reason: null });
+    migrated.prepare('UPDATE players SET left_at = 2500').run();
+    migrated.prepare("UPDATE games SET end_reason = 'host_left'").run();
     migrated.prepare('UPDATE players SET captured_at = 1900, radar_snapshot = ?, radar_at = 2100').run('{"new":true}');
     migrated.close();
     const reopened = openDb(file);
     expect(reopened.prepare('SELECT captured_at, radar_snapshot FROM players').get())
       .toEqual({ captured_at: 1900, radar_snapshot: '{"new":true}' });
+    expect(reopened.prepare('SELECT left_at FROM players').get()).toEqual({ left_at: 2500 });
+    expect(reopened.prepare('SELECT end_reason FROM games').get()).toEqual({ end_reason: 'host_left' });
     expect(reopened.prepare('SELECT COUNT(*) AS n FROM games').get()).toEqual({ n: 1 });
     reopened.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

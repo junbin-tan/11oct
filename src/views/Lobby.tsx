@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ExitButton } from '../components/ExitButton';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { UiIcon } from '../components/UiIcon';
 import type { GpsStatus as Status } from '../hooks/useGeolocation';
@@ -12,13 +13,14 @@ interface LobbyProps {
   onEnableGps: () => void;
   onResetGps: () => void;
   onStart: () => void;
+  onExit: () => Promise<string | null>;
 }
 
 export function inviteUrl(code: string): string {
   return `${window.location.origin}/?room=${code}`;
 }
 
-export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart }: LobbyProps) {
+export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart, onExit }: LobbyProps) {
   const [copied, setCopied] = useState(false);
   const { game, me, players } = state;
 
@@ -41,7 +43,10 @@ export function Lobby({ state, gpsStatus, busy, onEnableGps, onResetGps, onStart
           <p className="eyebrow">GPS Tag</p>
           <h1>Game lobby</h1>
         </div>
-        <span className="stage-pill">Waiting</span>
+        <div className="screen-bar-actions">
+          <span className="stage-pill">Waiting</span>
+          <ExitButton phase="lobby" isHost={me.is_host} busy={busy} onExit={onExit} />
+        </div>
       </header>
 
       <section className="invite-card" aria-labelledby="room-code-label">

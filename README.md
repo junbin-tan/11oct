@@ -1,6 +1,6 @@
 # GPS Tag
 
-A small phone game of infection tag. One player starts as the catcher. Catchers scan a runner’s QR code, or enter a short code, and that runner becomes a catcher too. A north-up radar covers 500 metres and refreshes about every five seconds.
+A small phone game of infection tag. One player starts as the catcher. Catchers scan a runner’s QR code, or enter a short code, and that runner becomes a catcher too. A north-up radar covers 500 metres and refreshes about every five seconds. The separate Map button opens a full-screen street map showing everyone in the active game, including players beyond 500 metres.
 
 The app is one Node process: a React interface and a Fastify API, with the game stored in SQLite.
 
@@ -44,9 +44,17 @@ Radar uncertainty includes both players’ reported accuracy radii. Distances ar
 
 `PUT /api/game/location` accepts `{ lat, lng, accuracy, captured_at }`. Capture time is an integer epoch timestamp normalized to the server clock estimate. SQLite `captured_at` records measurement time; `location_at` remains receipt time for throttling. Upload acknowledgements include `accepted`, `reason`, `next_upload_at`, and `server_now`. Reasons are `accepted`, `throttled`, `older` (including duplicates), `expired` (over 30 seconds), and `future` (over five seconds ahead). Small positive clock differences are clamped to receipt time. Invalid types/ranges receive `INVALID_INPUT`.
 
-Radar responses retain previous fields and add `origin_captured_at`, `origin_accuracy_m`, and per-player `captured_at`, `uncertainty_m`, and `position_uncertain`. Absolute coordinates remain private. Legacy uploads without capture time are accepted, but their age is unknown and updated clients do not plot them precisely; older browser tabs should reload to use the improved display.
+Radar responses retain previous fields and add `origin_captured_at`, `origin_accuracy_m`, and per-player `captured_at`, `uncertainty_m`, and `position_uncertain`. Radar and general game-state responses do not expose absolute coordinates; the authenticated map endpoint shares fresh coordinates with members of the same active game. Legacy uploads without capture time are accepted, but their age is unknown and updated clients do not plot them precisely; older browser tabs should reload to use the improved display.
 
 Database startup adds the capture-time column to existing installations transactionally and clears incompatible radar caches. Existing receipt timestamps are not reinterpreted as measurements. Restarting an upgraded database does not repeat the migration or erase fresh data. No manual database reset is needed.
+
+### Full game map
+
+The in-game **Map** button opens a street map with drag, pinch, wheel, keyboard, and +/− zoom controls. **My location** recentres on you; **Show everyone** fits all available players. The initial view fits everyone, then preserves your chosen viewport during updates. Names and role shapes identify players; your marker is blue. Accuracy circles show each phone’s reported GPS radius. Faded markers are over 15 seconds old; readings older than 30 seconds disappear even during a connection outage.
+
+`GET /api/game/map` requires a signed player session in an active game. It returns `server_now`, `snapshot_at`, `points` (`player_id`, `lat`, `lng`, `accuracy_m`, `captured_at`), and `unavailable_player_ids`. It includes the viewer, excludes players who left, and has no distance restriction. Unknown capture times or accuracy are unavailable. No tag credentials are returned. Clients poll every five seconds only while the map is open and visible; failures retry after ten seconds. Opening the map does not start another GPS watch. No database migration is required for the map.
+
+Street tiles use OpenStreetMap with visible attribution and normal browser caching. Only viewed tiles load; offline downloading is not supported. Tile failures leave the player overlay available with a retry control. To use another provider, set both `VITE_MAP_TILE_URL` (with `{z}/{x}/{y}` placeholders) and `VITE_MAP_TILE_ATTRIBUTION` before building. The default provider is best-effort; follow its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
 
 ### Hybrid app roadmap
 
@@ -87,5 +95,8 @@ The service must be reached through Railway’s public HTTPS proxy. That proxy o
 - The host starts once at least two people have joined. GPS is optional; without it, a player is simply missing from the radar.
 - A catcher tags a runner by QR or six-character code. The same runner cannot be scored twice.
 - The game ends when no runners remain, or when the host ends it.
-- A browser can resume its game until that game ends. It cannot join another live game first.
+- Players can exit a waiting room or running game to return home and stop sharing GPS. A running game cannot be rejoined after exiting.
+- When the host exits, a waiting room closes for everyone; a running game ends and the remaining players see results.
+- Mid-game departures retain their earned tags in the results, labeled “Left game”, and do not count as survivors. Play ends if departures leave no runners or catchers.
+- A browser can resume its game until it exits or the game ends. Exit or finish the current game before joining another.
 - Refreshing resumes the signed browser session. Clearing site data starts a new player.

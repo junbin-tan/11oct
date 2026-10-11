@@ -3,6 +3,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, viewFor } from '../src/App';
+import { ExitButton } from '../src/components/ExitButton';
+import { Results } from '../src/views/Results';
+import { PlayerAvatar, playerInitials } from '../src/components/PlayerAvatar';
 import { PlayerQr } from '../src/components/PlayerQr';
 import { Radar, radarPosition } from '../src/components/Radar';
 import { useGeolocation } from '../src/hooks/useGeolocation';
@@ -13,6 +16,7 @@ import { GpsStatus } from '../src/views/GpsStatus';
 
 const apiMock = vi.hoisted(() => ({
   getState: vi.fn(),
+  leaveGame: vi.fn(),
   getRadar: vi.fn(),
   updateLocation: vi.fn(),
 }));
@@ -51,7 +55,7 @@ function stateWith(status: GameState['game']['status']): GameState {
   return {
     server_now: 0,
     me: { player_id: 'p1', name: 'A', role: 'runner', is_host: false, tag_code: 'AAAAAA', qr_payload: 'tag:X:p1:t' },
-    game: { code: 'ABCDEF', status, host_player_id: 'p0', created_at: 0, started_at: null, ended_at: null },
+    game: { code: 'ABCDEF', status, host_player_id: 'p0', created_at: 0, started_at: null, ended_at: null, end_reason: null },
     players: [],
     events: [],
   };
@@ -79,6 +83,21 @@ describe('radarPosition', () => {
     expect(east.y).toBeCloseTo(centre.y);
     expect(south.y).toBeGreaterThan(centre.y);
     expect(radarPosition(2000, 0)).toEqual(north);
+  });
+});
+
+describe('player presentation', () => {
+  afterEach(cleanup);
+
+  it('keeps long names compact while exposing stable role classes', () => {
+    expect(playerInitials('Ada Lovelace')).toBe('AL');
+    expect(playerInitials('  Prince  ')).toBe('P');
+
+    const view = render(<PlayerAvatar name="Alexandria Catherine Montgomery" role="runner" />);
+    expect(view.container.querySelector('.player-avatar.runner')?.textContent).toBe('AC');
+
+    view.rerender(<PlayerAvatar name="Grace Hopper" role="catcher" />);
+    expect(view.container.querySelector('.player-avatar.catcher')?.textContent).toBe('GH');
   });
 });
 
@@ -129,6 +148,15 @@ describe('QrScanner', () => {
     });
     expect(onSubmit).toHaveBeenCalledWith({ code: 'ABC123' });
   });
+
+  it('keeps manual entry behind an explicit fallback action while the camera works', async () => {
+    render(<QrScanner onSubmit={vi.fn()} onClose={vi.fn()} />);
+    await act(async () => {});
+
+    expect(screen.queryByLabelText('Tag code')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Enter code instead' }));
+    expect(screen.getByLabelText('Tag code')).toBeTruthy();
+  });
 });
 
 describe('native dialogs', () => {
@@ -171,13 +199,14 @@ function membership(status: GameState['game']['status'], code = 'ABCDEF'): GameS
         is_host: true,
         gps_ready: false,
         tag_count: 0,
-        caught_at: null,
+        caught_at: null, left_at: null,
       },
     ],
   };
 }
 
 describe('session recovery', () => {
+  beforeEach(() => apiMock.leaveGame.mockReset().mockResolvedValue({ state: null }));
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
@@ -231,7 +260,7 @@ describe('session recovery', () => {
     window.history.replaceState(null, '', '/?room=JOINME');
     apiMock.getState.mockResolvedValue({ state: membership('waiting', 'LIVE01') });
     render(<App />);
-    expect(await screen.findByText('Finish this game before joining JOINME.')).toBeTruthy();
+    expect(await screen.findByText('Exit this room or finish the game before joining JOINME.')).toBeTruthy();
     expect(screen.getByText('LIVE01')).toBeTruthy();
     expect(apiMock.getState).toHaveBeenCalled();
   });
@@ -522,12 +551,26 @@ describe('GpsStatus recovery actions', () => {
 describe('radar freshness and uncertainty display', () => {
   afterEach(cleanup);
   const at = 1_000_000;
-  const player = { id: 'p2', name: 'Bob', role: 'runner' as const, is_host: false, gps_ready: true, tag_count: 0, caught_at: null };
+  const player = { id: 'p2', name: 'Bob', role: 'runner' as const, is_host: false, gps_ready: true, tag_count: 0, caught_at: null, left_at: null };
   const snapshot = (): RadarResponse => ({
     origin_available: true, origin_captured_at: at, origin_accuracy_m: 15,
     snapshot_at: at, next_ping_at: at + 5000, server_now: at, missing_gps_count: 0, outside_range_count: 0,
     points: [{ player_id: 'p2', distance_m: 150, bearing_deg: 90, accuracy_m: 5,
       captured_at: at, fix_age_s: 0, uncertainty_m: 20, position_uncertain: false }],
+  });
+  it('uses a circle for Runners and a diamond for Catchers', () => {
+    const catcher = { ...player, id: 'p3', name: 'Casey', role: 'catcher' as const };
+    const radar = snapshot();
+    radar.points.push({
+      player_id: 'p3', distance_m: 220, bearing_deg: 180, accuracy_m: 5,
+      captured_at: at, fix_age_s: 0, uncertainty_m: 20, position_uncertain: false,
+    });
+
+    const view = render(<Radar radar={radar} players={[player, catcher]} nowMs={at} />);
+    const runnerMarker = view.container.querySelector('circle.radar-dot.runner');
+    const catcherMarker = view.container.querySelector('rect.radar-dot.catcher');
+    expect(runnerMarker).not.toBeNull();
+    expect(catcherMarker?.getAttribute('transform')).toContain('rotate(45');
   });
   it('shows combined uncertainty and ages the reading during a network outage', () => {
     const radar = snapshot();

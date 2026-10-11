@@ -4,7 +4,7 @@ interface ModalDialogProps {
   label: string;
   children: ReactNode;
   onClose: () => void;
-  variant?: 'card' | 'fullscreen';
+  variant?: 'card' | 'fullscreen' | 'map';
 }
 
 export function ModalDialog({ label, children, onClose, variant = 'card' }: ModalDialogProps) {
